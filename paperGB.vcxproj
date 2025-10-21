@@ -128,7 +128,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\gb.cpp" />
     <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\apu.h" />
+    <ClInclude Include="src\cartridge.h" />
+    <ClInclude Include="src\cpu.h" />
+    <ClInclude Include="src\gb.h" />
+    <ClInclude Include="src\input.h" />
+    <ClInclude Include="src\mmu.h" />
+    <ClInclude Include="src\ppu.h" />
+    <ClInclude Include="src\timer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
