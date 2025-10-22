@@ -1,15 +1,24 @@
-#include <cartridge.h>
-#include <cpu.h>
-#include <ppu.h>
-#include <apu.h>
-#include <mmu.h>
-#include <timer.h>
-#include <input.h>
+#pragma once
+
+#include "cartridge.h"
+#include "cpu.h"
+#include "ppu.h"
+#include "apu.h"
+#include "mmu.h"
+#include "timer.h"
+#include "input.h"
 
 class GB {
 public: 
-	//Initialize GB object with a game cartridge and optionally a save state
-	GB(Cartridge cart, save_state);
+	//Initialize GB object with a game cartridge 
+	//TODO: and optionally a save state
+	GB(Cartridge in_cart);
+
+	//Start emulator loop
+	void run();
+
+	//Tick the PPU, APU, and Timer
+	void tick_other_components();
 
 private: 
 	Cartridge cart;

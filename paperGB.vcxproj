@@ -128,6 +128,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\cpu.cpp" />
     <ClCompile Include="src\gb.cpp" />
     <ClCompile Include="src\main.cpp" />
   </ItemGroup>
@@ -138,6 +139,7 @@
     <ClInclude Include="src\gb.h" />
     <ClInclude Include="src\input.h" />
     <ClInclude Include="src\mmu.h" />
+    <ClInclude Include="src\opcode.cpp" />
     <ClInclude Include="src\ppu.h" />
     <ClInclude Include="src\timer.h" />
   </ItemGroup>
