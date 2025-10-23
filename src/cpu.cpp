@@ -4,17 +4,17 @@ uint16_t ByteRegisterPair::get_word() {
 	return (high << 8) | low;
 }
 
-void ByteRegisterPair::set_word(uint16_t set) {
-	low = set & 0xFF;
-	high = (set >> 8) & 0xFF;
+void ByteRegisterPair::set_word(uint16_t value) {
+	low = value & 0xFF;
+	high = (value >> 8) & 0xFF;
 }
 
 uint16_t WordRegister::get_word() {
 	return word;
 }
 
-void WordRegister::set_word(uint16_t set) {
-	word = set;
+void WordRegister::set_word(uint16_t value) {
+	word = value;
 }
 
 CPU::CPU(GB& in_gb) :
