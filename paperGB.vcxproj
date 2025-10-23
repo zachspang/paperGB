@@ -131,6 +131,7 @@
     <ClCompile Include="src\cpu.cpp" />
     <ClCompile Include="src\gb.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\mmu.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\apu.h" />

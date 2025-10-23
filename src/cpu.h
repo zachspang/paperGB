@@ -23,7 +23,12 @@ public:
 
 class CPU {
 public:
+	friend class MMU;
+
 	CPU(GB& in_gb);
+
+	//Execute one cycle
+	void tick();
 
 	void execute_opcode(uint8_t opcode);
 
@@ -217,5 +222,10 @@ private:
 
 	//Program counter
 	WordRegister PC;
-	
+
+	bool interrupt_master_enable;
+
+	uint8_t interrupt_enable;
+
+	uint8_t interrupt_flag;
 };

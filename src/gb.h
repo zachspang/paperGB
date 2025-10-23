@@ -10,6 +10,8 @@
 
 class GB {
 public: 
+	friend class MMU;
+
 	//Initialize GB object with a game cartridge 
 	//TODO: and optionally a save state
 	GB(Cartridge in_cart);
@@ -34,4 +36,6 @@ private:
 	Timer timer;
 
 	Input input;
+
+	uint8_t OAM_DMA;
 };
