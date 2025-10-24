@@ -7,6 +7,9 @@ public:
 	//Can only write to bits 6-3
 	void lcd_control_write(uint8_t byte);
 
+	//Start OAM DMA transfer
+	void start_OAM_DMA(uint8_t byte);
+
 	//Execute one cycle;
 	void tick();
 private:
