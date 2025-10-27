@@ -11,6 +11,7 @@
 class GB {
 public: 
 	friend class MMU;
+	friend class CPU;
 
 	//Initialize GB object with a game cartridge 
 	//TODO: and optionally a save state

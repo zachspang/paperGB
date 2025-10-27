@@ -34,6 +34,18 @@ public:
 
 	void execute_CB_opcode(uint8_t opcode);
 
+	//Flag enum for accessing the correct bit of F for the corresponding flag
+	enum Flag {
+		Z = 1 << 7,
+		N = 1 << 6,
+		H = 1 << 5,
+		C = 1 << 4
+	};
+
+	void set_flag(Flag flag, bool value);
+
+	bool get_flag(Flag flag);
+
 	//CPU Instructions
 	//Info on instructions with not obvious timings 
 	// https://gist.github.com/SonoSooS/c0055300670d678b5ae8433e20bea595#fetch-and-stuff
@@ -47,17 +59,15 @@ public:
 	//Add operand to dest
 	void ADD(Register& dest, uint16_t operand);
 
-	//Bitwise and dest with operand
-	void AND(uint8_t& dest, uint8_t operand);
+	//Bitwise and A with operand
+	void AND(uint8_t operand);
 
 	//Test the bit_idx(0-7) bit of operand and set the zero flag if the bit is not set
 	void BIT(uint8_t bit_idx, uint8_t operand);
 
 	//Call addr
+	// Ticks 3 M-Cycles
 	void CALL(uint16_t addr);
-
-	//Call addr if cond is met
-	void CALL(uint8_t cond, uint16_t addr);
 
 	//Complement carry flag
 	void CCF();
@@ -76,12 +86,13 @@ public:
 	void DEC(uint8_t& dest);
 
 	//Decrement dest
+	// Ticks 1 M-Cycles
 	void DEC(Register& dest);
 
 	//Disable interrupts byte clearing IME flag
 	void DI();
 	
-	//Enable interrupts by setting IME flag
+	//Enable interrupts by setting IME flag, flag is set after next instruction
 	void EI();
 
 	//Enter CPU low-power mode utill an interrupt occurs
@@ -92,6 +103,7 @@ public:
 	void INC(uint8_t& dest);
 
 	//Increment Dest
+	// Ticks 1 M-Cycles
 	void INC(Register& dest);
 
 	//Jump to addr
@@ -221,11 +233,15 @@ private:
 	WordRegister SP;
 
 	//Program counter
-	WordRegister PC;
+	uint16_t PC;
+
+	bool ei_scheduled;
 
 	bool interrupt_master_enable;
 
 	uint8_t interrupt_enable;
 
 	uint8_t interrupt_flag;
+
+	bool halted;
 };
