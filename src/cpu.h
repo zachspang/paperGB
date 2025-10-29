@@ -107,16 +107,14 @@ public:
 	void INC(Register& dest);
 
 	//Jump to addr
+	// Ticks 1 M-Cycles
 	void JP(uint16_t addr);
 
-	//Jump to addr if cond is met
-	void JP(uint8_t cond, uint16_t addr);
+	//Jump to addr in HL
+	void JP();
 
 	//Relative jump to PC + offset(-128,+127)
 	void JR(int8_t offset);
-
-	//Relative jump to PC + offset(-128,+127) if cond is met
-	void JR(uint8_t cond, int8_t offset);
 
 	//Copy value of operand to dest
 	void LD(uint8_t& dest, uint8_t operand);
@@ -125,9 +123,11 @@ public:
 	void LD(Register& dest, uint16_t operand);
 
 	//Copy value of operand to dest then increment HL
+	// Ticks 1 M-Cycles
 	void LD_HLI(uint8_t& dest, uint8_t operand);
 
 	//Copy value of operand to dest then decrement HL
+	// Ticks 1 M-Cycles
 	void LD_HLD(uint8_t& dest, uint8_t operand);
 
 	//No operation
@@ -137,19 +137,19 @@ public:
 	void OR(uint8_t operand);
 
 	//Pop from stack and store to dest
+	// Ticks 2 M-Cycles
 	void POP(Register& dest);
 
-	//Push to stack from dest
-	void PUSH(Register& dest);
+	//Push to stack from reg
+	// Tick 3 M-Cycles
+	void PUSH(ByteRegisterPair& reg);
 
 	//Set bit bit_idx(0-7) to 0
 	void RES(uint8_t bit_idx, uint8_t& dest);
 
 	//Return from subroutine
+	// Ticks 3 M-Cycles
 	void RET();
-
-	//Return from subroutine if cond is met
-	void RET(uint8_t cond);
 
 	//Return from subroutine and enable interrupts
 	void RETI();
@@ -179,6 +179,7 @@ public:
 	void RRCA();
 
 	//Call address tgt from RST vector
+	// Ticks 3 M-Cycles
 	void RST(uint8_t tgt);
 	
 	//Subtract operand and carry flag from A

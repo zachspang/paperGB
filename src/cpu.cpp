@@ -142,7 +142,7 @@ void CPU::CCF() {
 }
 
 void CPU::CP(uint8_t operand) {
-	uint16_t result = AF.high - operand;
+	uint8_t result = AF.high - operand;
 
 	set_flag(Z, result == 0);
 	set_flag(N, 1);
@@ -223,13 +223,20 @@ void CPU::INC(Register& dest) {
 	dest.set_word(dest.get_word() + 1);
 }
 
-void CPU::JP(uint16_t addr) {}
+void CPU::JP(uint16_t addr) {
+	//Extra cycle
+	gb.tick_other_components();
 
-void CPU::JP(uint8_t cond, uint16_t addr) {}
+	PC = addr;
+}
 
-void CPU::JR(int8_t offset) {}
+void CPU::JP() {
+	PC = HL.get_word();
+}
 
-void CPU::JR(uint8_t cond, int8_t offset) {}
+void CPU::JR(int8_t offset) {
+	PC = PC + 1 + offset;
+}
 
 void CPU::LD(uint8_t& dest, uint8_t operand) {
 	dest = operand;
@@ -239,60 +246,231 @@ void CPU::LD(Register& dest, uint16_t operand) {
 	dest.set_word(operand);
 }
 
-void CPU::LD_HLI(uint8_t& dest, uint8_t operand) {}
+void CPU::LD_HLI(uint8_t& dest, uint8_t operand) {
+	dest = operand;
+	INC(HL);
+}
 
-void CPU::LD_HLD(uint8_t& dest, uint8_t operand) {}
+void CPU::LD_HLD(uint8_t& dest, uint8_t operand) {
+	dest = operand;
+	DEC(HL);
+}
 
 void CPU::NOP() {}
 
-void CPU::OR(uint8_t operand) {}
+void CPU::OR(uint8_t operand) {
+	AF.high = AF.high | operand;
 
-void CPU::POP(Register& dest) {}
+	set_flag(Z, AF.high == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+	set_flag(C, 0);
+}
 
-void CPU::PUSH(Register& dest) {}
+void CPU::POP(Register& dest) {
+	uint16_t popped_addr = 0;
+	popped_addr =  (gb.mmu.read(SP.word + 1) << 8) | gb.mmu.read(SP.word);
+	dest.set_word(popped_addr);
+	SP.word += 2;
 
-void CPU::RES(uint8_t bit_idx, uint8_t& dest) {}
+	//Only POP AF sets flags
+	if (&dest == &AF) {
+		set_flag(Z, (AF.low >> 7) | 1);
+		set_flag(N, (AF.low >> 6) | 1);
+		set_flag(H, (AF.low >> 5) | 1);
+		set_flag(C, (AF.low >> 4) | 1);
+	}
+}
 
-void CPU::RET() {}
+void CPU::PUSH(ByteRegisterPair& reg) {
+	//Extra cycle
+	gb.tick_other_components();
+	//Push high byte
+	gb.mmu.write(SP.word - 1, reg.high);
+	//Push low byte
+	gb.mmu.write(SP.word - 2, reg.low);
+	//Decrement SP
+	SP.word -= 2;
+}
 
-void CPU::RET(uint8_t cond) {}
+void CPU::RES(uint8_t bit_idx, uint8_t& dest) {
+	dest &= ~(1 << bit_idx);
+}
 
-void CPU::RETI() {}
+void CPU::RET() {
+	//Extra Cycle
+	gb.tick_other_components();
 
-void CPU::RL(uint8_t& operand) {}
+	PC = (gb.mmu.read(SP.word + 1) << 8) | gb.mmu.read(SP.word);
+	SP.word += 2;
+}
 
-void CPU::RLA() {}
+void CPU::RETI() {
+	RET();
+	interrupt_master_enable = true;
+}
 
-void CPU::RLC(uint8_t& operand) {}
+void CPU::RL(uint8_t& operand) {
+	bool temp_C = get_flag(C);
+	set_flag(C, operand >> 7);
+	operand = (operand << 1) | temp_C;
 
-void CPU::RLCA() {}
+	set_flag(Z, operand == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::RR(uint8_t& operand) {}
+void CPU::RLA() {
+	bool temp_C = get_flag(C);
+	set_flag(C, AF.high >> 7);
+	AF.high = (AF.high << 1) | temp_C;
 
-void CPU::RRA() {}
+	set_flag(Z, 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::RRC(uint8_t& operand) {}
+void CPU::RLC(uint8_t& operand) {
+	set_flag(C, operand >> 7);
+	operand = (operand << 1) | get_flag(C);
 
-void CPU::RRCA() {}
+	set_flag(Z, operand == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::RST(uint8_t tgt) {}
+void CPU::RLCA() {
+	set_flag(C, AF.high >> 7);
+	AF.high = (AF.high << 1) | get_flag(C);
 
-void CPU::SBC(uint8_t operand) {}
+	set_flag(Z, 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::SCF() {}
+void CPU::RR(uint8_t& operand) {
+	bool temp_C = get_flag(C);
+	set_flag(C, operand & 1);
+	operand = (operand >> 1) | (temp_C << 7);
 
-void CPU::SET(uint8_t bit_idx, uint8_t& dest) {}
+	set_flag(Z, operand == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::SLA(uint8_t& dest) {}
+void CPU::RRA() {
+	bool temp_C = get_flag(C);
+	set_flag(C, AF.high & 1);
+	AF.high = (AF.high >> 1) | (temp_C << 7);
 
-void CPU::SRA(uint8_t& dest) {}
+	set_flag(Z, 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::SRL(uint8_t& dest) {}
+void CPU::RRC(uint8_t& operand) {
+	set_flag(C, operand & 1);
+	operand = (operand >> 1) | (get_flag(C) << 7);
 
-void CPU::STOP() {}
+	set_flag(Z, operand == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::SUB(uint8_t operand) {}
+void CPU::RRCA() {
+	set_flag(C, AF.high & 1);
+	AF.high = (AF.high >> 1) | (get_flag(C) << 7);
 
-void CPU::SWAP(uint8_t& dest) {}
+	set_flag(Z, 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
 
-void CPU::XOR(uint8_t operand) {}
+void CPU::RST(uint8_t tgt) {
+	CALL(tgt);
+}
+
+void CPU::SBC(uint8_t operand) {
+	operand += get_flag(C);
+	uint8_t result = AF.high - operand;
+
+	set_flag(Z, result == 0);
+	set_flag(N, 1);
+	set_flag(H, (((AF.high & 0xF) - (operand & 0xF)) & 0x10) == 0x10);
+	set_flag(C, operand > AF.high);
+
+	AF.high = result;
+}
+
+void CPU::SCF() {
+	set_flag(N, 0);
+	set_flag(H, 0);
+	set_flag(C, 1);
+}
+
+void CPU::SET(uint8_t bit_idx, uint8_t& dest) {
+	dest |= (1 << bit_idx);
+}
+
+void CPU::SLA(uint8_t& dest) {
+	set_flag(C, dest >> 7);
+	dest = dest << 1;
+
+	set_flag(Z, dest == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
+
+void CPU::SRA(uint8_t& dest) {
+	set_flag(C, dest & 1);
+	dest = dest >> 1;
+	dest |= ((dest << 1) & 0b10000000);
+
+	set_flag(Z, dest == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
+
+void CPU::SRL(uint8_t& dest) {
+	set_flag(C, dest & 1);
+	dest = dest >> 1;
+
+	set_flag(Z, dest == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+}
+
+void CPU::STOP() {
+	NOP();
+}
+
+void CPU::SUB(uint8_t operand) {
+	uint8_t result = AF.high - operand;
+
+	set_flag(Z, result == 0);
+	set_flag(N, 1);
+	set_flag(H, (((AF.high & 0xF) - (operand & 0xF)) & 0x10) == 0x10);
+	set_flag(C, operand > AF.high);
+
+	AF.high = result;
+}
+
+void CPU::SWAP(uint8_t& dest) {
+	uint8_t temp = dest << 4;
+	dest = dest >> 4;
+	dest |= temp;
+
+	set_flag(Z, dest == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+	set_flag(C, 0);
+}
+
+void CPU::XOR(uint8_t operand) {
+	AF.high = AF.high | operand;
+
+	set_flag(Z, AF.high == 0);
+	set_flag(N, 0);
+	set_flag(H, 0);
+	set_flag(C, 0);
+}
