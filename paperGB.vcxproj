@@ -128,6 +128,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\common.cpp" />
     <ClCompile Include="src\cpu.cpp" />
     <ClCompile Include="src\gb.cpp" />
     <ClCompile Include="src\main.cpp" />

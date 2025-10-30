@@ -4,10 +4,10 @@ class Cartridge {
 
 public:
 	friend class MMU;
-	uint8_t read_ROM_bank(uint16_t addr);
+	uint8_t* ptr_ROM_bank(uint16_t addr);
 	void write_ROM_bank(uint16_t addir, uint8_t byte);
 
-	uint8_t read_RAM(uint16_t addr);
+	uint8_t* ptr_RAM(uint16_t addr);
 	void write_RAM(uint16_t addir, uint8_t byte);
 private:	
 	//0000-3FFF

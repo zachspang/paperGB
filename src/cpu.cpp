@@ -39,7 +39,7 @@ CPU::CPU(GB& in_gb) :
 
 void CPU::tick() {
 	if (!halted) {
-		//Increment PC, read the byte at PC, then exectute the opcode it refers to
+		//Read the byte at PC, Increment PC, then exectute the opcode it refers to
 		execute_opcode(gb.mmu.read(PC++));
 	}
 	else {
@@ -98,6 +98,9 @@ void CPU::ADD(uint8_t operand) {
 }
 
 void CPU::ADD(Register& dest, uint16_t operand) {
+	//Extra Cycle
+	gb.tick_other_components();
+
 	uint32_t result = dest.get_word() + operand;
 	dest.set_word(result & 0xFFFF);
 
@@ -235,6 +238,9 @@ void CPU::JP() {
 }
 
 void CPU::JR(int8_t offset) {
+	//Extra Cycles
+	gb.tick_other_components();
+
 	PC = PC + 1 + offset;
 }
 
@@ -246,14 +252,19 @@ void CPU::LD(Register& dest, uint16_t operand) {
 	dest.set_word(operand);
 }
 
+void CPU::LD(uint16_t addr) {
+	gb.mmu.write(addr, SP.word & 0xFF);
+	gb.mmu.write(addr + 1, SP.word >> 8);
+}
+
 void CPU::LD_HLI(uint8_t& dest, uint8_t operand) {
 	dest = operand;
-	INC(HL);
+	HL.set_word(HL.get_word() + 1);
 }
 
 void CPU::LD_HLD(uint8_t& dest, uint8_t operand) {
 	dest = operand;
-	DEC(HL);
+	HL.set_word(HL.get_word() - 1);
 }
 
 void CPU::NOP() {}

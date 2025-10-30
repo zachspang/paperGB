@@ -30,8 +30,12 @@ public:
 	//Execute one cycle
 	void tick();
 
+	//Execute opcode
+	// When this function is called 1 M cycle has happened for the fetch step
 	void execute_opcode(uint8_t opcode);
 
+	//Execute CB opcode
+	// When this function is called 2 M cycles have happened for the fetch step
 	void execute_CB_opcode(uint8_t opcode);
 
 	//Flag enum for accessing the correct bit of F for the corresponding flag
@@ -42,13 +46,32 @@ public:
 		C = 1 << 4
 	};
 
+	//Set flag in F register
 	void set_flag(Flag flag, bool value);
 
+	//Get flag from F register
 	bool get_flag(Flag flag);
 
-	//CPU Instructions
-	//Info on instructions with not obvious timings 
-	// https://gist.github.com/SonoSooS/c0055300670d678b5ae8433e20bea595#fetch-and-stuff
+	
+	/*
+	============================================================================
+	| Helper functions for opcodes
+	============================================================================
+	*/
+
+	//Get immediate 8 bit data
+	// Ticks 1 M-Cycles
+	uint8_t n8();
+
+	//Get immediate 16 bit data
+	// Ticks 2 M-Cycles
+	uint16_t n16();
+
+	/*
+	============================================================================
+	| CPU Instructions
+	============================================================================
+	*/
 
 	//Add operand to A + carry flag
 	void ADC(uint8_t operand);
@@ -57,6 +80,7 @@ public:
 	void ADD(uint8_t operand);
 
 	//Add operand to dest
+	// Tick 1 M-Cycles
 	void ADD(Register& dest, uint16_t operand);
 
 	//Bitwise and A with operand
@@ -114,6 +138,7 @@ public:
 	void JP();
 
 	//Relative jump to PC + offset(-128,+127)
+	// Ticks 1 M-Cycles
 	void JR(int8_t offset);
 
 	//Copy value of operand to dest
@@ -122,12 +147,14 @@ public:
 	//Copy value of operand to dest
 	void LD(Register& dest, uint16_t operand);
 
+	//Copy SP & 0xFF at addr and SP >> 8 at addr + 1.
+	// Ticks 2 M-Cycles
+	void LD(uint16_t addr);
+
 	//Copy value of operand to dest then increment HL
-	// Ticks 1 M-Cycles
 	void LD_HLI(uint8_t& dest, uint8_t operand);
 
 	//Copy value of operand to dest then decrement HL
-	// Ticks 1 M-Cycles
 	void LD_HLD(uint8_t& dest, uint8_t operand);
 
 	//No operation
