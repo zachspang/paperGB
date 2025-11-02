@@ -102,11 +102,28 @@ void CPU::ADD(Register& dest, uint16_t operand) {
 	gb.tick_other_components();
 
 	uint32_t result = dest.get_word() + operand;
-	dest.set_word(result & 0xFFFF);
-
+	
 	set_flag(N, 0);
 	set_flag(H, (((dest.get_word() & 0xFFF) + (operand & 0xFFF)) & 0x1000) == 0x1000);
 	set_flag(C, result > 0xFFFF);
+
+	dest.set_word(result & 0xFFFF);
+}
+
+void CPU::ADD_SP_E8(int8_t operand) {
+	//Extra Cycle
+	gb.tick_other_components();
+	//Extra Cycle
+	gb.tick_other_components();
+
+	uint32_t result = SP.get_word() + operand;
+
+	set_flag(Z, 0);
+	set_flag(N, 0);
+	set_flag(H, (((SP.get_word() & 0xFFF) + (operand & 0xFFF)) & 0x1000) == 0x1000);
+	set_flag(C, result > 0xFFFF);
+
+	SP.set_word(result & 0xFFFF);
 }
 
 void CPU::AND(uint8_t operand) {
@@ -233,7 +250,7 @@ void CPU::JP(uint16_t addr) {
 	PC = addr;
 }
 
-void CPU::JP() {
+void CPU::JP_HL() {
 	PC = HL.get_word();
 }
 

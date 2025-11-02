@@ -83,6 +83,10 @@ public:
 	// Tick 1 M-Cycles
 	void ADD(Register& dest, uint16_t operand);
 
+	//Add add signed operand to SP
+	// Tick 2 M-Cycles
+	void ADD_SP_E8(int8_t operand);
+
 	//Bitwise and A with operand
 	void AND(uint8_t operand);
 
@@ -135,7 +139,7 @@ public:
 	void JP(uint16_t addr);
 
 	//Jump to addr in HL
-	void JP();
+	void JP_HL();
 
 	//Relative jump to PC + offset(-128,+127)
 	// Ticks 1 M-Cycles
