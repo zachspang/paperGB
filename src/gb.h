@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.h"
 #include "cartridge.h"
 #include "cpu.h"
 #include "ppu.h"
@@ -7,6 +8,8 @@
 #include "mmu.h"
 #include "timer.h"
 #include "input.h"
+
+class CPU;
 
 class GB {
 public: 

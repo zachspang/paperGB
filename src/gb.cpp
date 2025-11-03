@@ -3,10 +3,10 @@
 
 GB::GB(Cartridge in_cart) :
 	//cart(in_cart),
-	cpu(*this),
+	cpu(this),
 	ppu(),
 	apu(),
-	mmu(*this),
+	mmu(this),
 	timer(),
 	input()
 {

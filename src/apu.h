@@ -1,3 +1,5 @@
+#include "common.h"
+
 class APU {
 public:
 	friend class MMU;

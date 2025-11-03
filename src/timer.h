@@ -1,3 +1,5 @@
+#include "common.h"
+
 class Timer {
 public:
 	friend class MMU;

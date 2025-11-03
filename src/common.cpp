@@ -1,6 +1,4 @@
-#pragma once
-#include <cstdio>
-#include <stdarg.h>
+#include "common.h"
 
 void LOG(const char* txt, ...) {
     va_list args;

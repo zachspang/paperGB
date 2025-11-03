@@ -1,5 +1,8 @@
-#include <cstdint>
-#include "gb.h"
+#pragma once
+#include "common.h"
+
+class GB;
+
 class Register {
 public:
 	virtual uint16_t get_word() = 0;
@@ -25,7 +28,7 @@ class CPU {
 public:
 	friend class MMU;
 
-	CPU(GB& in_gb);
+	CPU(GB* in_gb);
 
 	//Execute one cycle
 	void tick();
@@ -245,7 +248,7 @@ public:
 
 private:
 	//GB object, used to access memory
-	GB& gb;
+	GB* gb;
 
 	//Registers AF, BC, DE, HL are 16bit registers that can also be two seperate 8bit registers
 

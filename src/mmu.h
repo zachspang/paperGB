@@ -1,8 +1,12 @@
-#include "gb.h"
+#pragma once
+#include "common.h"
+
+//Forward declaration
+class GB;
 
 class MMU {
 public:
-	MMU(GB& in_gb);
+	MMU(GB* in_gb);
 
 	//Get pointer to byte and tick components other than the cpu 1 M-cycle
 	uint8_t* ptr(uint16_t addr);
@@ -13,7 +17,7 @@ public:
 	//Write byte and tick components other than the cpu 1 M-cycle
 	void write(uint16_t addr, uint8_t byte);
 private:
-	GB& gb;
+	GB* gb;
 
 	//8000-9FFF
 	uint8_t VRAM[8 * 1024];

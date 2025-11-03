@@ -1,8 +1,10 @@
-#include "gb.h"
+#include "common.h"
 
 class PPU {
 public:
 	friend class MMU;
+
+	PPU();
 
 	//Can only write to bits 6-3
 	void lcd_control_write(uint8_t byte);

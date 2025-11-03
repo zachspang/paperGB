@@ -128,20 +128,26 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\apu.cpp" />
+    <ClCompile Include="src\cartridge.cpp" />
     <ClCompile Include="src\common.cpp" />
     <ClCompile Include="src\cpu.cpp" />
     <ClCompile Include="src\gb.cpp" />
+    <ClCompile Include="src\input.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\mmu.cpp" />
+    <ClCompile Include="src\ppu.cpp" />
+    <ClCompile Include="src\timer.cpp" />
+    <ClCompile Include="tests\timingtest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\apu.h" />
     <ClInclude Include="src\cartridge.h" />
+    <ClInclude Include="src\common.h" />
     <ClInclude Include="src\cpu.h" />
     <ClInclude Include="src\gb.h" />
     <ClInclude Include="src\input.h" />
     <ClInclude Include="src\mmu.h" />
-    <ClInclude Include="src\opcode.cpp" />
     <ClInclude Include="src\ppu.h" />
     <ClInclude Include="src\timer.h" />
   </ItemGroup>

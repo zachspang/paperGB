@@ -1,9 +1,14 @@
+#include "common.h"
+
 class Cartridge {
 //I want Cartridge to handle reads and writes to rom banks and external memory
 //MMU.read/write() calls Cartridge for data
 
 public:
 	friend class MMU;
+
+	Cartridge();
+
 	uint8_t* ptr_ROM_bank(uint16_t addr);
 	void write_ROM_bank(uint16_t addir, uint8_t byte);
 
