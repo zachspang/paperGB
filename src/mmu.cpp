@@ -15,29 +15,29 @@ MMU::MMU(GB* in_gb) :
 uint8_t* MMU::ptr(uint16_t addr) {
 	gb->tick_other_components();
 
-	if (addr >= 0x0000 and addr <= 0x7FFF) {
+	if (addr >= 0x0000 && addr <= 0x7FFF) {
 		return gb->cart.ptr_ROM_bank(addr);
 	}
-	else if (addr >= 0x8000 and addr <= 0x9FFF) {
+	else if (addr >= 0x8000 && addr <= 0x9FFF) {
 		return &VRAM[addr - 0x8000];
 	}
-	else if (addr >= 0xA000 and addr <= 0xBFFF) {
+	else if (addr >= 0xA000 && addr <= 0xBFFF) {
 		return gb->cart.ptr_RAM(addr - 0xA000);
 	}
-	else if (addr >= 0xC000 and addr <= 0xCFFF) {
+	else if (addr >= 0xC000 && addr <= 0xCFFF) {
 		return &WRAM1[addr - 0xC000];
 	}
-	else if (addr >= 0xD000 and addr <= 0xDFFF) {
+	else if (addr >= 0xD000 && addr <= 0xDFFF) {
 		return &WRAM2[addr - 0xD000];
 	}
-	else if (addr >= 0xE000 and addr <= 0xFDFF) {
+	else if (addr >= 0xE000 && addr <= 0xFDFF) {
 		//Echo ram unimplemented
 		return nullptr;
 	}
-	else if (addr >= 0xFE00 and addr <= 0xFD9F) {
+	else if (addr >= 0xFE00 && addr <= 0xFE9F) {
 		return &OAM[addr - 0xFE00];
 	}
-	else if (addr >= 0xFEA0 and addr <= 0xFEFF) {
+	else if (addr >= 0xFEA0 && addr <= 0xFEFF) {
 		//Should return 0xFF during OAM block
 		return nullptr;
 	}
@@ -122,7 +122,7 @@ uint8_t* MMU::ptr(uint16_t addr) {
 	else if (addr == 0xFF26) {
 		return &gb->apu.NR52;
 	}
-	else if (addr >= 0xFF30 and addr <= 0xFF3F) {
+	else if (addr >= 0xFF30 && addr <= 0xFF3F) {
 		return &gb->apu.wave[addr - 0xFF30];
 	}
 	else if (addr == 0xFF40) {
@@ -164,7 +164,7 @@ uint8_t* MMU::ptr(uint16_t addr) {
 	else if (addr == 0xFF50) {
 		return &gb->cart.boot_ROM_mapping;
 	}
-	else if (addr >= 0xFF80 and addr <= 0xFFFE) {
+	else if (addr >= 0xFF80 && addr <= 0xFFFE) {
 		return &HRAM[addr - 0xFF80];
 	}
 	else if (addr == 0xFFFF) {

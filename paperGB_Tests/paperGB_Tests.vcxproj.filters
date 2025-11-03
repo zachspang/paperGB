@@ -15,64 +15,64 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\main.cpp">
+    <ClCompile Include="paperGB_Tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\gb.cpp">
+    <ClCompile Include="..\src\apu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\cpu.cpp">
+    <ClCompile Include="..\src\cartridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\mmu.cpp">
+    <ClCompile Include="..\src\common.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\common.cpp">
+    <ClCompile Include="..\src\cpu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\apu.cpp">
+    <ClCompile Include="..\src\gb.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\cartridge.cpp">
+    <ClCompile Include="..\src\input.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\input.cpp">
+    <ClCompile Include="..\src\mmu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\ppu.cpp">
+    <ClCompile Include="..\src\ppu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\timer.cpp">
+    <ClCompile Include="..\src\timer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\input.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\apu.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\apu.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\cartridge.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\cartridge.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\common.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\cpu.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\cpu.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\common.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\gb.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\gb.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\input.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\mmu.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\mmu.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\ppu.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\ppu.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\timer.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="..\src\timer.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

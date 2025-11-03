@@ -26,6 +26,8 @@ public:
 	//Tick the PPU, APU, and Timer
 	void tick_other_components();
 
+	int get_t_cycle_count();
+
 private: 
 	Cartridge cart;
 
@@ -42,4 +44,6 @@ private:
 	Input input;
 
 	uint8_t OAM_DMA;
+
+	int t_cycle_count;
 };

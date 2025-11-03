@@ -539,7 +539,7 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0x0E: LD(BC.low, n8()); break;
     case 0x0F: RRCA(); break;
 
-    case 0x10: STOP(); n8(); break;
+    case 0x10: STOP(); break;
     case 0x11: LD(DE, n16()); break;
     case 0x12: LD(*gb->mmu.ptr(DE.get_word()), AF.high); break;
     case 0x13: INC(DE); break;
@@ -770,7 +770,7 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xE7: RST(0x20); break;
     case 0xE8: ADD_SP_E8(n8()); break;
     case 0xE9: JP_HL();  break;
-    case 0xEA: gb->tick_other_components(); LD(*gb->mmu.ptr(n16()), AF.high); break;
+    case 0xEA: LD(*gb->mmu.ptr(n16()), AF.high); break;
         //case 0xEB:
         //case 0xEC: 
         //case 0xED: 
@@ -787,14 +787,14 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xF7: RST(0x30); break;
     case 0xF8: gb->tick_other_components(); LD(HL, SP.word + (int8_t)n8()); break;
     case 0xF9: gb->tick_other_components(); LD(SP, HL.get_word());  break;
-    case 0xFA: gb->tick_other_components(); LD(AF.high, gb->mmu.read(n16())); break;
+    case 0xFA: LD(AF.high, gb->mmu.read(n16())); break;
     case 0xEB: EI(); break;
         //case 0xEC: 
         //case 0xED: 
     case 0xFE: CP(n8()); break;
     case 0xFF: RST(0x38); break;
 
-    default: LOG_WARN("Invalid opcode 0x%s", opcode);
+    default: LOG_WARN("Invalid opcode 0x%X", opcode);
     }
 }
 
@@ -1071,6 +1071,6 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xFD: break;
     case 0xFE: break;
     case 0xFF: break;
-    default: LOG_WARN("Invalid opcode 0xCB%s", opcode);
+    default: LOG_WARN("Invalid opcode 0xCB%X", opcode);
     }
 }

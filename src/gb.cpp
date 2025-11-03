@@ -10,15 +10,21 @@ GB::GB(Cartridge in_cart) :
 	timer(),
 	input()
 {
+	t_cycle_count = 0;
 }
 
 void GB::tick_other_components() {
 	//This is called after an M-Cycle so we need to tick ppu 4 T-cycles
 	for (int i = 0; i < 4; i++) {
+		t_cycle_count++;
 		ppu.tick();
 	}
 	apu.tick();
 	timer.tick();
+}
+
+int GB::get_t_cycle_count() {
+	return t_cycle_count;
 }
 
 void GB::run() {
