@@ -9,10 +9,10 @@ public:
 
 	Cartridge();
 
-	uint8_t* ptr_ROM_bank(uint16_t addr);
+	uint8_t read_ROM_bank(uint16_t addr);
 	void write_ROM_bank(uint16_t addir, uint8_t byte);
 
-	uint8_t* ptr_RAM(uint16_t addr);
+	uint8_t read_RAM(uint16_t addr);
 	void write_RAM(uint16_t addir, uint8_t byte);
 private:	
 	//0000-3FFF
@@ -25,4 +25,6 @@ private:
 	uint8_t ExternalRAM[8 * 1024];
 
 	uint8_t boot_ROM_mapping;
+
+	bool RAM_enabled;
 };

@@ -8,9 +8,6 @@ class MMU {
 public:
 	MMU(GB* in_gb);
 
-	//Get pointer to byte and tick components other than the cpu 1 M-cycle
-	uint8_t* ptr(uint16_t addr);
-
 	//Read byte and tick components other than the cpu 1 M-cycle
 	uint8_t read(uint16_t addr);
 

@@ -30,7 +30,7 @@ CPU::CPU(GB* in_gb) :
 	HL.high = 0;
 	HL.low = 0;
 	SP.word = 0;
-	PC = 0;
+	PC = 0x100;
 	ei_scheduled = 0;
 	interrupt_master_enable = 0;
 	interrupt_enable = 0;
@@ -56,7 +56,7 @@ void CPU::tick() {
 		interrupt_master_enable = false;
 	}
 
-	//Set IME which isnt checked again untill after the next instruction
+	//Set IME which isnt checked again until after the next instruction
 	if (ei_scheduled) {
 		ei_scheduled = false;
 		interrupt_master_enable = true;
@@ -208,7 +208,7 @@ void CPU::DEC(uint8_t& dest) {
 	dest--;
 	set_flag(Z, dest == 0);
 	set_flag(N, 1);
-	set_flag(H, (((AF.high & 0xF) - (1 & 0xF)) & 0x10) == 0x10);
+    set_flag(H, ((((dest + 1) & 0xF) - 1) & 0x10) == 0x10);
 }
 
 void CPU::DEC(Register& dest) {
@@ -216,6 +216,14 @@ void CPU::DEC(Register& dest) {
 	gb->tick_other_components();
 
 	dest.set_word(dest.get_word() - 1);
+}
+
+void CPU::DEC_mem(uint16_t addr) {
+    uint8_t new_val = gb->mmu.read(addr) - 1;
+    gb->mmu.write(addr, new_val);
+    set_flag(Z, new_val == 0);
+    set_flag(N, 1);
+    set_flag(H, ((((new_val + 1) & 0xF) - 1) & 0x10) == 0x10);
 }
 
 void CPU::DI() {
@@ -234,7 +242,7 @@ void CPU::INC(uint8_t& dest) {
 	dest++;
 	set_flag(Z, dest == 0);
 	set_flag(N, 0);
-	set_flag(H, (((dest & 0xF) + (1 & 0xF)) & 0x10) == 0x10);
+    set_flag(H, ((((dest - 1) & 0xF) + 1) & 0x10) == 0x10);
 }
 
 void CPU::INC(Register& dest) {
@@ -242,6 +250,14 @@ void CPU::INC(Register& dest) {
 	gb->tick_other_components();
 
 	dest.set_word(dest.get_word() + 1);
+}
+
+void CPU::INC_mem(uint16_t addr) {
+    uint8_t new_val = gb->mmu.read(addr) + 1;
+    gb->mmu.write(addr, new_val);
+    set_flag(Z, new_val == 0);
+    set_flag(N, 0);
+    set_flag(H, ((((new_val - 1) & 0xF) + 1) & 0x10) == 0x10);
 }
 
 void CPU::JP(uint16_t addr) {
@@ -270,7 +286,11 @@ void CPU::LD(Register& dest, uint16_t operand) {
 	dest.set_word(operand);
 }
 
-void CPU::LD(uint16_t addr) {
+void CPU::LD_mem(uint16_t addr, uint8_t operand) {
+    gb->mmu.write(addr, operand);
+}
+
+void CPU::LD_n16_SP(uint16_t addr) {
 	gb->mmu.write(addr, SP.word & 0xFF);
 	gb->mmu.write(addr + 1, SP.word >> 8);
 }
@@ -280,9 +300,19 @@ void CPU::LD_HLI(uint8_t& dest, uint8_t operand) {
 	HL.set_word(HL.get_word() + 1);
 }
 
+void CPU::LD_HLI_mem(uint16_t addr, uint8_t operand) {
+    gb->mmu.write(addr, operand);
+    HL.set_word(HL.get_word() + 1);
+}
+
 void CPU::LD_HLD(uint8_t& dest, uint8_t operand) {
 	dest = operand;
 	HL.set_word(HL.get_word() - 1);
+}
+
+void CPU::LD_HLD_mem(uint16_t addr, uint8_t operand) {
+    gb->mmu.write(addr, operand);
+    HL.set_word(HL.get_word() - 1);
 }
 
 void CPU::NOP() {}
@@ -326,6 +356,12 @@ void CPU::RES(uint8_t bit_idx, uint8_t& dest) {
 	dest &= ~(1 << bit_idx);
 }
 
+void CPU::RES_mem(uint8_t bit_idx, uint16_t addr) {
+    uint8_t dest = gb->mmu.read(addr);
+    dest &= ~(1 << bit_idx);
+    gb->mmu.write(addr, dest);
+}
+
 void CPU::RET() {
 	//Extra Cycle
 	gb->tick_other_components();
@@ -349,6 +385,18 @@ void CPU::RL(uint8_t& operand) {
 	set_flag(H, 0);
 }
 
+void CPU::RL_mem(uint16_t addr) {
+    uint8_t operand = gb->mmu.read(addr);
+    bool temp_C = get_flag(C);
+    set_flag(C, operand >> 7);
+    operand = (operand << 1) | temp_C;
+    gb->mmu.write(addr, operand);
+
+    set_flag(Z, operand == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
+}
+
 void CPU::RLA() {
 	bool temp_C = get_flag(C);
 	set_flag(C, AF.high >> 7);
@@ -366,6 +414,17 @@ void CPU::RLC(uint8_t& operand) {
 	set_flag(Z, operand == 0);
 	set_flag(N, 0);
 	set_flag(H, 0);
+}
+
+void CPU::RLC_mem(uint16_t addr) {
+    uint8_t operand = gb->mmu.read(addr);
+    set_flag(C, operand >> 7);
+    operand = (operand << 1) | get_flag(C);
+    gb->mmu.write(addr, operand);
+
+    set_flag(Z, operand == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
 }
 
 void CPU::RLCA() {
@@ -387,6 +446,18 @@ void CPU::RR(uint8_t& operand) {
 	set_flag(H, 0);
 }
 
+void CPU::RR_mem(uint16_t addr) {
+    uint8_t operand = gb->mmu.read(addr);
+    bool temp_C = get_flag(C);
+    set_flag(C, operand & 1);
+    operand = (operand >> 1) | (temp_C << 7);
+    gb->mmu.write(addr, operand);
+
+    set_flag(Z, operand == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
+}
+
 void CPU::RRA() {
 	bool temp_C = get_flag(C);
 	set_flag(C, AF.high & 1);
@@ -404,6 +475,17 @@ void CPU::RRC(uint8_t& operand) {
 	set_flag(Z, operand == 0);
 	set_flag(N, 0);
 	set_flag(H, 0);
+}
+
+void CPU::RRC_mem(uint16_t addr) {
+    uint8_t operand = gb->mmu.read(addr);
+    set_flag(C, operand & 1);
+    operand = (operand >> 1) | (get_flag(C) << 7);
+    gb->mmu.write(addr, operand);
+
+    set_flag(Z, operand == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
 }
 
 void CPU::RRCA() {
@@ -441,6 +523,12 @@ void CPU::SET(uint8_t bit_idx, uint8_t& dest) {
 	dest |= (1 << bit_idx);
 }
 
+void CPU::SET_mem(uint8_t bit_idx, uint16_t addr) {
+    uint8_t dest = gb->mmu.read(addr);
+    dest |= (1 << bit_idx);
+    gb->mmu.write(addr, dest);
+}
+
 void CPU::SLA(uint8_t& dest) {
 	set_flag(C, dest >> 7);
 	dest = dest << 1;
@@ -448,6 +536,17 @@ void CPU::SLA(uint8_t& dest) {
 	set_flag(Z, dest == 0);
 	set_flag(N, 0);
 	set_flag(H, 0);
+}
+
+void CPU::SLA_mem(uint16_t addr) {
+    uint8_t dest = gb->mmu.read(addr);
+    set_flag(C, dest >> 7);
+    dest = dest << 1;
+    gb->mmu.write(addr, dest);
+
+    set_flag(Z, dest == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
 }
 
 void CPU::SRA(uint8_t& dest) {
@@ -460,6 +559,18 @@ void CPU::SRA(uint8_t& dest) {
 	set_flag(H, 0);
 }
 
+void CPU::SRA_mem(uint16_t addr) {
+    uint8_t dest = gb->mmu.read(addr);
+    set_flag(C, dest & 1);
+    dest = dest >> 1;
+    dest |= ((dest << 1) & 0b10000000);
+    gb->mmu.write(addr, dest);
+
+    set_flag(Z, dest == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
+}
+
 void CPU::SRL(uint8_t& dest) {
 	set_flag(C, dest & 1);
 	dest = dest >> 1;
@@ -467,6 +578,17 @@ void CPU::SRL(uint8_t& dest) {
 	set_flag(Z, dest == 0);
 	set_flag(N, 0);
 	set_flag(H, 0);
+}
+
+void CPU::SRL_mem(uint16_t addr) {
+    uint8_t dest = gb->mmu.read(addr);
+    set_flag(C, dest & 1);
+    dest = dest >> 1;
+    gb->mmu.write(addr, dest);
+
+    set_flag(Z, dest == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
 }
 
 void CPU::STOP() {
@@ -493,6 +615,19 @@ void CPU::SWAP(uint8_t& dest) {
 	set_flag(N, 0);
 	set_flag(H, 0);
 	set_flag(C, 0);
+}
+
+void CPU::SWAP_mem(uint16_t addr) {
+    uint8_t dest = gb->mmu.read(addr);
+    uint8_t temp = dest << 4;
+    dest = dest >> 4;
+    dest |= temp;
+    gb->mmu.write(addr, dest);
+
+    set_flag(Z, dest == 0);
+    set_flag(N, 0);
+    set_flag(H, 0);
+    set_flag(C, 0);
 }
 
 void CPU::XOR(uint8_t operand) {
@@ -524,13 +659,13 @@ void CPU::execute_opcode(uint8_t opcode) {
 
     case 0x00: NOP(); break;
     case 0x01: LD(BC, n16()); break;
-    case 0x02: LD(*gb->mmu.ptr(BC.get_word()), AF.high); break;
+    case 0x02: LD_mem(BC.get_word(), AF.high); break;
     case 0x03: INC(BC); break;
     case 0x04: INC(BC.high); break;
     case 0x05: DEC(BC.high); break;
     case 0x06: LD(BC.high, n8()); break;
     case 0x07: RLCA();  break;
-    case 0x08: LD(n16()); break;
+    case 0x08: LD_n16_SP(n16()); break;
     case 0x09: ADD(HL, BC.get_word()); break;
     case 0x0A: LD(AF.high, gb->mmu.read(BC.get_word())); break;
     case 0x0B: DEC(BC); break;
@@ -541,7 +676,7 @@ void CPU::execute_opcode(uint8_t opcode) {
 
     case 0x10: STOP(); break;
     case 0x11: LD(DE, n16()); break;
-    case 0x12: LD(*gb->mmu.ptr(DE.get_word()), AF.high); break;
+    case 0x12: LD_mem(DE.get_word(), AF.high); break;
     case 0x13: INC(DE); break;
     case 0x14: INC(DE.high); break;
     case 0x15: DEC(DE.high); break;
@@ -558,7 +693,7 @@ void CPU::execute_opcode(uint8_t opcode) {
 
     case 0x20: if (!get_flag(Z)) JR(n8()); else n8(); break;
     case 0x21: LD(HL, n16()); break;
-    case 0x22: LD_HLI(*gb->mmu.ptr(HL.get_word()), AF.high); break;
+    case 0x22: LD_HLI_mem(HL.get_word(), AF.high); break;
     case 0x23: INC(HL); break;
     case 0x24: INC(HL.high); break;
     case 0x25: DEC(HL.high); break;
@@ -575,11 +710,11 @@ void CPU::execute_opcode(uint8_t opcode) {
 
     case 0x30: if (!get_flag(C)) JR(n8()); else n8(); break;
     case 0x31: LD(SP, n16()); break;
-    case 0x32: LD_HLD(*gb->mmu.ptr(HL.get_word()), AF.high); break;
+    case 0x32: LD_HLD_mem(HL.get_word(), AF.high); break;
     case 0x33: INC(SP); break;
-    case 0x34: INC(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
-    case 0x35: DEC(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
-    case 0x36: LD(*gb->mmu.ptr(HL.get_word()), n8()); break;
+    case 0x34: INC_mem(HL.get_word()); break;
+    case 0x35: DEC_mem(HL.get_word()); break;
+    case 0x36: LD_mem(HL.get_word(), n8()); break;
     case 0x37: SCF();  break;
     case 0x38: if (get_flag(C)) JR(n8()); else n8(); break;
     case 0x39: ADD(HL, SP.get_word()); break;
@@ -641,14 +776,14 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0x6E: LD(HL.low, gb->mmu.read(HL.get_word())); break;
     case 0x6F: LD(HL.low, AF.high); break;
 
-    case 0x70: LD(*gb->mmu.ptr(HL.get_word()), BC.high); break;
-    case 0x71: LD(*gb->mmu.ptr(HL.get_word()), BC.low); break;
-    case 0x72: LD(*gb->mmu.ptr(HL.get_word()), DE.high); break;
-    case 0x73: LD(*gb->mmu.ptr(HL.get_word()), DE.low); break;
-    case 0x74: LD(*gb->mmu.ptr(HL.get_word()), HL.high); break;
-    case 0x75: LD(*gb->mmu.ptr(HL.get_word()), HL.low); break;
+    case 0x70: LD_mem(HL.get_word(), BC.high); break;
+    case 0x71: LD_mem(HL.get_word(), BC.low); break;
+    case 0x72: LD_mem(HL.get_word(), DE.high); break;
+    case 0x73: LD_mem(HL.get_word(), DE.low); break;
+    case 0x74: LD_mem(HL.get_word(), HL.high); break;
+    case 0x75: LD_mem(HL.get_word(), HL.low); break;
     case 0x76: HALT(); break;
-    case 0x77: LD(*gb->mmu.ptr(HL.get_word()), AF.high); break;
+    case 0x77: LD_mem(HL.get_word(), AF.high); break;
     case 0x78: LD(AF.high, BC.high); break;
     case 0x79: LD(AF.high, BC.low); break;
     case 0x7A: LD(AF.high, DE.high); break;
@@ -737,7 +872,7 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xC8: gb->tick_other_components(); if (get_flag(Z)) RET(); break;
     case 0xC9: RET(); break;
     case 0xCA: if (get_flag(Z)) JP(n16()); else n16(); break;
-        //case 0xCB: Prefix, case defined at start of switch
+    //case 0xCB: Prefix, case defined at start of switch
     case 0xCC: if (get_flag(Z)) CALL(n16()); else n16(); break;
     case 0xCD: CALL(n16()); break;
     case 0xCE: ADC(n8()); break;
@@ -746,7 +881,7 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xD0: gb->tick_other_components(); if (!get_flag(C)) RET(); break;
     case 0xD1: POP(DE); break;
     case 0xD2: if (!get_flag(C)) JP(n16()); else n16(); break;
-        //case 0xD3:
+    //case 0xD3:
     case 0xD4: if (!get_flag(C)) CALL(n16()); else n16(); break;
     case 0xD5: PUSH(DE); break;
     case 0xD6: SUB(n8()); break;
@@ -754,26 +889,26 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xD8: gb->tick_other_components(); if (get_flag(C)) RET(); break;
     case 0xD9: RETI(); break;
     case 0xDA: if (get_flag(C)) JP(n16()); else n16(); break;
-        //case 0xDB: 
+    //case 0xDB: 
     case 0xDC: if (get_flag(C)) CALL(n16()); else n16(); break;
-        //case 0xDD:
+    //case 0xDD:
     case 0xDE: SBC(n8()); break;
     case 0xDF: RST(0x18); break;
 
-    case 0xE0: LD(*gb->mmu.ptr(0xFF00 + n8()), AF.high);  break;
+    case 0xE0: LD_mem(0xFF00 + n8(), AF.high);  break;
     case 0xE1: POP(HL); break;
-    case 0xE2: LD(*gb->mmu.ptr(0xFF00 + BC.low), AF.high); break;
-        //case 0xE3: 
-        //case 0xE4:
+    case 0xE2: LD_mem(0xFF00 + BC.low, AF.high); break;
+    //case 0xE3: 
+    //case 0xE4:
     case 0xE5: PUSH(HL); break;
     case 0xE6: AND(n8()); break;
     case 0xE7: RST(0x20); break;
     case 0xE8: ADD_SP_E8(n8()); break;
     case 0xE9: JP_HL();  break;
-    case 0xEA: LD(*gb->mmu.ptr(n16()), AF.high); break;
-        //case 0xEB:
-        //case 0xEC: 
-        //case 0xED: 
+    case 0xEA: LD_mem(n16(), AF.high); break;
+    //case 0xEB:
+    //case 0xEC: 
+    //case 0xED: 
     case 0xEE: XOR(n8()); break;
     case 0xEF: RST(0x28); break;
 
@@ -781,7 +916,7 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xF1: POP(AF); break;
     case 0xF2: LD(AF.high, gb->mmu.read(0xFF00 + BC.low)); break;
     case 0xE3: DI(); break;
-        //case 0xE4:
+    //case 0xE4:
     case 0xF5: PUSH(AF); break;
     case 0xF6: OR(n8()); break;
     case 0xF7: RST(0x30); break;
@@ -789,8 +924,8 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xF9: gb->tick_other_components(); LD(SP, HL.get_word());  break;
     case 0xFA: LD(AF.high, gb->mmu.read(n16())); break;
     case 0xEB: EI(); break;
-        //case 0xEC: 
-        //case 0xED: 
+    //case 0xEC: 
+    //case 0xED: 
     case 0xFE: CP(n8()); break;
     case 0xFF: RST(0x38); break;
 
@@ -806,7 +941,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x03: RLC(DE.low); break;
     case 0x04: RLC(HL.high);  break;
     case 0x05: RLC(HL.low); break;
-    case 0x06: RLC(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x06: RLC_mem(HL.get_word()); break;
     case 0x07: RLC(AF.high); break;
 
     case 0x08: RRC(BC.high);  break;
@@ -815,7 +950,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x0B: RRC(DE.low); break; 
     case 0x0C: RRC(HL.high);  break; 
     case 0x0D: RRC(HL.low); break; 
-    case 0x0E: RRC(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x0E: RRC_mem(HL.get_word()); break;
     case 0x0F: RRC(AF.high); break;
 
     case 0x10: RL(BC.high);  break;
@@ -824,7 +959,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x13: RL(DE.low); break;
     case 0x14: RL(HL.high);  break;
     case 0x15: RL(HL.low); break;
-    case 0x16: RL(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x16: RL_mem(HL.get_word()); break;
     case 0x17: RL(AF.high); break;
 
     case 0x18: RR(BC.high);  break;
@@ -833,7 +968,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x1B: RR(DE.low); break;
     case 0x1C: RR(HL.high);  break;
     case 0x1D: RR(HL.low); break;
-    case 0x1E: RR(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x1E: RR_mem(HL.get_word()); break;
     case 0x1F: RR(AF.high); break;
 
     case 0x20: SLA(BC.high);  break;
@@ -842,7 +977,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x23: SLA(DE.low); break;
     case 0x24: SLA(HL.high);  break;
     case 0x25: SLA(HL.low); break;
-    case 0x26: SLA(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x26: SLA_mem(HL.get_word()); break;
     case 0x27: SLA(AF.high); break;
 
     case 0x28: SRA(BC.high);  break;
@@ -851,7 +986,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x2B: SRA(DE.low); break;
     case 0x2C: SRA(HL.high);  break;
     case 0x2D: SRA(HL.low); break;
-    case 0x2E: SRA(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x2E: SRA_mem(HL.get_word()); break;
     case 0x2F: SRA(AF.high); break;
 
     case 0x30: SWAP(BC.high);  break;
@@ -860,7 +995,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x33: SWAP(DE.low); break;
     case 0x34: SWAP(HL.high);  break;
     case 0x35: SWAP(HL.low); break;
-    case 0x36: SWAP(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x36: SWAP_mem(HL.get_word()); break;
     case 0x37: SWAP(AF.high); break;
 
     case 0x38: SRL(BC.high);  break;
@@ -869,7 +1004,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x3B: SRL(DE.low); break;
     case 0x3C: SRL(HL.high);  break;
     case 0x3D: SRL(HL.low); break;
-    case 0x3E: SRL(*gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x3E: SRL_mem(HL.get_word()); break;
     case 0x3F: SRL(AF.high); break;
 
     case 0x40: BIT(0, BC.high);  break;
@@ -878,7 +1013,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x43: BIT(0, DE.low); break;
     case 0x44: BIT(0, HL.high);  break;
     case 0x45: BIT(0, HL.low); break;
-    case 0x46: BIT(0, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x46: BIT(0, gb->mmu.read(HL.get_word())); break;
     case 0x47: BIT(0, AF.high); break;
 
     case 0x48: BIT(1, BC.high);  break;
@@ -887,7 +1022,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x4B: BIT(1, DE.low); break;
     case 0x4C: BIT(1, HL.high);  break;
     case 0x4D: BIT(1, HL.low); break;
-    case 0x4E: BIT(1, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x4E: BIT(1, gb->mmu.read(HL.get_word())); break;
     case 0x4F: BIT(1, AF.high); break;
 
     case 0x50: BIT(2, BC.high);  break;
@@ -896,7 +1031,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x53: BIT(2, DE.low); break;
     case 0x54: BIT(2, HL.high);  break;
     case 0x55: BIT(2, HL.low); break;
-    case 0x56: BIT(2, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x56: BIT(2, gb->mmu.read(HL.get_word())); break;
     case 0x57: BIT(2, AF.high); break;
 
     case 0x58: BIT(3, BC.high);  break;
@@ -905,7 +1040,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x5B: BIT(3, DE.low); break;
     case 0x5C: BIT(3, HL.high);  break;
     case 0x5D: BIT(3, HL.low); break;
-    case 0x5E: BIT(3, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x5E: BIT(3, gb->mmu.read(HL.get_word())); break;
     case 0x5F: BIT(3, AF.high); break;
 
     case 0x60: BIT(4, BC.high);  break;
@@ -914,7 +1049,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x63: BIT(4, DE.low); break;
     case 0x64: BIT(4, HL.high);  break;
     case 0x65: BIT(4, HL.low); break;
-    case 0x66: BIT(4, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x66: BIT(4, gb->mmu.read(HL.get_word())); break;
     case 0x67: BIT(4, AF.high); break;
 
     case 0x68: BIT(5, BC.high);  break;
@@ -923,7 +1058,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x6B: BIT(5, DE.low); break;
     case 0x6C: BIT(5, HL.high);  break;
     case 0x6D: BIT(5, HL.low); break;
-    case 0x6E: BIT(5, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x6E: BIT(5, gb->mmu.read(HL.get_word())); break;
     case 0x6F: BIT(5, AF.high); break;
 
     case 0x70: BIT(6, BC.high);  break;
@@ -932,7 +1067,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x73: BIT(6, DE.low); break;
     case 0x74: BIT(6, HL.high);  break;
     case 0x75: BIT(6, HL.low); break;
-    case 0x76: BIT(6, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x76: BIT(6, gb->mmu.read(HL.get_word())); break;
     case 0x77: BIT(6, AF.high); break;
 
     case 0x78: BIT(7, BC.high);  break;
@@ -941,7 +1076,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x7B: BIT(7, DE.low); break;
     case 0x7C: BIT(7, HL.high);  break;
     case 0x7D: BIT(7, HL.low); break;
-    case 0x7E: BIT(7, *gb->mmu.ptr(HL.get_word())); break;
+    case 0x7E: BIT(7, gb->mmu.read(HL.get_word())); break;
     case 0x7F: BIT(7, AF.high); break;
 
     case 0x80: RES(0, BC.high);  break;
@@ -950,7 +1085,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x83: RES(0, DE.low); break;
     case 0x84: RES(0, HL.high);  break;
     case 0x85: RES(0, HL.low); break;
-    case 0x86: RES(0, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x86: RES_mem(0, HL.get_word()); break;
     case 0x87: RES(0, AF.high); break;
 
     case 0x88: RES(1, BC.high);  break;
@@ -959,7 +1094,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x8B: RES(1, DE.low); break;
     case 0x8C: RES(1, HL.high);  break;
     case 0x8D: RES(1, HL.low); break;
-    case 0x8E: RES(1, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x8E: RES_mem(1, HL.get_word()); break;
     case 0x8F: RES(1, AF.high); break;
 
     case 0x90: RES(2, BC.high);  break;
@@ -968,7 +1103,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x93: RES(2, DE.low); break;
     case 0x94: RES(2, HL.high);  break;
     case 0x95: RES(2, HL.low); break;
-    case 0x96: RES(2, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x96: RES_mem(2, HL.get_word()); break;
     case 0x97: RES(2, AF.high); break;
 
     case 0x98: RES(3, BC.high);  break;
@@ -977,7 +1112,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0x9B: RES(3, DE.low); break;
     case 0x9C: RES(3, HL.high);  break;
     case 0x9D: RES(3, HL.low); break;
-    case 0x9E: RES(3, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0x9E: RES_mem(3, HL.get_word()); break;
     case 0x9F: RES(3, AF.high); break;
 
     case 0xA0: RES(4, BC.high);  break;
@@ -986,7 +1121,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xA3: RES(4, DE.low); break;
     case 0xA4: RES(4, HL.high);  break;
     case 0xA5: RES(4, HL.low); break;
-    case 0xA6: RES(4, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xA6: RES_mem(4, HL.get_word()); break;
     case 0xA7: RES(4, AF.high); break;
 
     case 0xA8: RES(5, BC.high);  break;
@@ -995,7 +1130,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xAB: RES(5, DE.low); break;
     case 0xAC: RES(5, HL.high);  break;
     case 0xAD: RES(5, HL.low); break;
-    case 0xAE: RES(5, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xAE: RES_mem(5, HL.get_word()); break;
     case 0xAF: RES(5, AF.high); break;
 
     case 0xB0: RES(6, BC.high);  break;
@@ -1004,7 +1139,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xB3: RES(6, DE.low); break;
     case 0xB4: RES(6, HL.high);  break;
     case 0xB5: RES(6, HL.low); break;
-    case 0xB6: RES(6, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xB6: RES_mem(6, HL.get_word()); break;
     case 0xB7: RES(6, AF.high); break;
 
     case 0xB8: RES(7, BC.high);  break;
@@ -1013,7 +1148,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xBB: RES(7, DE.low); break;
     case 0xBC: RES(7, HL.high);  break;
     case 0xBD: RES(7, HL.low); break;
-    case 0xBE: RES(7, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xBE: RES_mem(7, HL.get_word()); break;
     case 0xBF: RES(7, AF.high); break;
 
     case 0xC0: SET(0, BC.high);  break;
@@ -1022,7 +1157,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xC3: SET(0, DE.low); break;
     case 0xC4: SET(0, HL.high);  break;
     case 0xC5: SET(0, HL.low); break;
-    case 0xC6: SET(0, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xC6: SET_mem(0, HL.get_word()); break;
     case 0xC7: SET(0, AF.high); break;
 
     case 0xC8: SET(1, BC.high);  break;
@@ -1031,7 +1166,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xCB: SET(1, DE.low); break;
     case 0xCC: SET(1, HL.high);  break;
     case 0xCD: SET(1, HL.low); break;
-    case 0xCE: SET(1, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xCE: SET_mem(1, HL.get_word()); break;
     case 0xCF: SET(1, AF.high); break;
 
     case 0xD0: SET(2, BC.high);  break;
@@ -1040,7 +1175,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xD3: SET(2, DE.low); break;
     case 0xD4: SET(2, HL.high);  break;
     case 0xD5: SET(2, HL.low); break;
-    case 0xD6: SET(2, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xD6: SET_mem(2, HL.get_word()); break;
     case 0xD7: SET(2, AF.high); break;
 
     case 0xD8: SET(3, BC.high);  break;
@@ -1049,7 +1184,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xDB: SET(3, DE.low); break;
     case 0xDC: SET(3, HL.high);  break;
     case 0xDD: SET(3, HL.low); break;
-    case 0xDE: SET(3, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xDE: SET_mem(3, HL.get_word()); break;
     case 0xDF: SET(3, AF.high); break;
 
     case 0xE0: SET(4, BC.high);  break;
@@ -1058,7 +1193,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xE3: SET(4, DE.low); break;
     case 0xE4: SET(4, HL.high);  break;
     case 0xE5: SET(4, HL.low); break;
-    case 0xE6: SET(4, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xE6: SET_mem(4, HL.get_word()); break;
     case 0xE7: SET(4, AF.high); break;
 
     case 0xE8: SET(5, BC.high);  break;
@@ -1067,7 +1202,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xEB: SET(5, DE.low); break;
     case 0xEC: SET(5, HL.high);  break;
     case 0xED: SET(5, HL.low); break;
-    case 0xEE: SET(5, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xEE: SET_mem(5, HL.get_word()); break;
     case 0xEF: SET(5, AF.high); break;
 
     case 0xF0: SET(6, BC.high);  break;
@@ -1076,7 +1211,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xF3: SET(6, DE.low); break;
     case 0xF4: SET(6, HL.high);  break;
     case 0xF5: SET(6, HL.low); break;
-    case 0xF6: SET(6, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xF6: SET_mem(6, HL.get_word()); break;
     case 0xF7: SET(6, AF.high); break;
 
     case 0xF8: SET(7, BC.high);  break;
@@ -1085,7 +1220,7 @@ void CPU::execute_CB_opcode(uint8_t opcode) {
     case 0xFB: SET(7, DE.low); break;
     case 0xFC: SET(7, HL.high);  break;
     case 0xFD: SET(7, HL.low); break;
-    case 0xFE: SET(7, *gb->mmu.ptr(HL.get_word())); gb->tick_other_components(); break;
+    case 0xFE: SET_mem(7, HL.get_word()); break;
     case 0xFF: SET(7, AF.high); break;
 
     default: LOG_WARN("Invalid opcode 0xCB%X", opcode);

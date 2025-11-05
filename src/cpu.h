@@ -120,6 +120,10 @@ public:
 	// Ticks 1 M-Cycles
 	void DEC(Register& dest);
 
+	//Decrement byte at addr
+	// Ticks 2 M-Cycles
+	void DEC_mem(uint16_t addr);
+
 	//Disable interrupts byte clearing IME flag
 	void DI();
 	
@@ -136,6 +140,10 @@ public:
 	//Increment Dest
 	// Ticks 1 M-Cycles
 	void INC(Register& dest);
+
+	//Increment byte at addr
+	// Ticks 2 M-Cycles
+	void INC_mem(uint16_t addr);
 
 	//Jump to addr
 	// Ticks 1 M-Cycles
@@ -154,15 +162,27 @@ public:
 	//Copy value of operand to dest
 	void LD(Register& dest, uint16_t operand);
 
+	//Copy value of operand to memory location addr
+	// Ticks 1 M-Cycles
+	void LD_mem(uint16_t addr, uint8_t operand);
+
 	//Copy SP & 0xFF at addr and SP >> 8 at addr + 1.
 	// Ticks 2 M-Cycles
-	void LD(uint16_t addr);
+	void LD_n16_SP(uint16_t addr);
 
 	//Copy value of operand to dest then increment HL
 	void LD_HLI(uint8_t& dest, uint8_t operand);
 
+	//Copy value of operand to memory location addr then increment HL
+	// Ticks 1 M-Cycles
+	void LD_HLI_mem(uint16_t addr, uint8_t operand);
+
 	//Copy value of operand to dest then decrement HL
 	void LD_HLD(uint8_t& dest, uint8_t operand);
+
+	//Copy value of operand to memory location addr then decrement HL
+	// Ticks 1 M-Cycles
+	void LD_HLD_mem(uint16_t addr, uint8_t operand);
 
 	//No operation
 	void NOP();
@@ -181,6 +201,10 @@ public:
 	//Set bit bit_idx(0-7) to 0
 	void RES(uint8_t bit_idx, uint8_t& dest);
 
+	//Set bit bit_idx(0-7) to 0
+	// Ticks 2 M-Cycles
+	void RES_mem(uint8_t bit_idx, uint16_t addr);
+
 	//Return from subroutine
 	// Ticks 3 M-Cycles
 	void RET();
@@ -191,11 +215,19 @@ public:
 	//Rotate bits of operand left through the carry flag
 	void RL(uint8_t& operand);
 
+	//Rotate bits of operand left through the carry flag
+	// Ticks 2 M-Cycles
+	void RL_mem(uint16_t addr);
+
 	//Rotate bits of A left through the carry flag
 	void RLA();
 
 	//Rotate bits of operand left
 	void RLC(uint8_t& operand);
+
+	//Rotate bits of operand left
+	// Ticks 2 M-Cycles
+	void RLC_mem(uint16_t addr);
 
 	//Rotate bits of A left
 	void RLCA();
@@ -203,11 +235,19 @@ public:
 	//Rotate bits of operand right through the carry flag
 	void RR(uint8_t& operand);
 
+	//Rotate bits of operand right through the carry flag
+	// Ticks 2 M-Cycles
+	void RR_mem(uint16_t addr);
+
 	//Rotate bits of A right through the carry flag
 	void RRA();
 
 	//Rotate bits of operand right
 	void RRC(uint8_t& operand);
+
+	//Rotate bits of operand right
+	// Ticks 2 M-Cycles
+	void RRC_mem(uint16_t addr);
 
 	//Rotate bits of A right
 	void RRCA();
@@ -225,14 +265,30 @@ public:
 	//Set bit bit_idx(0-7) of dest
 	void SET(uint8_t bit_idx, uint8_t& dest);
 
+	//Set bit bit_idx(0-7) of dest
+	// Ticks 2 M-Cycles
+	void SET_mem(uint8_t bit_idx, uint16_t addr);
+
 	//Shift dest left arithmetically
 	void SLA(uint8_t& dest);
+
+	//Shift dest left arithmetically
+	// Ticks 2 M-Cycles
+	void SLA_mem(uint16_t addr);
 
 	//Shift dest right arithmetically
 	void SRA(uint8_t& dest);
 
+	//Shift dest right arithmetically
+	// Ticks 2 M-Cycles
+	void SRA_mem(uint16_t addr);
+
 	//Shift dest right logically
 	void SRL(uint8_t& dest);
+
+	//Shift dest right logically
+	// Ticks 2 M-Cycles
+	void SRL_mem(uint16_t addr);
 
 	//STOP is weird and not used in any licensed games, for now it will just call NOP
 	void STOP();
@@ -242,6 +298,10 @@ public:
 
 	//Swap the upper and lower bits of dest
 	void SWAP(uint8_t& dest);
+
+	//Swap the upper and lower bits of dest
+	// Ticks 2 M-Cycles
+	void SWAP_mem(uint16_t addr);
 
 	//Bitwise XOR A and operand
 	void XOR(uint8_t operand);

@@ -4,8 +4,8 @@ Input::Input() {
 	joypad_input = 0;
 }
 
-uint8_t* Input::ptr_joypad() {
-	return &joypad_input;
+uint8_t Input::read_joypad() {
+	return joypad_input;
 };
 
 void Input::write_joypad(uint8_t byte) {
