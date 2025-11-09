@@ -1,5 +1,6 @@
 #include "common.h"
 #include <vector>
+#include <string>
 
 class Cartridge {
 //I want Cartridge to handle reads and writes to rom banks and external memory

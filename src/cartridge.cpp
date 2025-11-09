@@ -1,5 +1,4 @@
 #include "cartridge.h"
-#include <string>
 #include <fstream> 
 #include <cmath>
 
@@ -168,21 +167,31 @@ int Cartridge::get_rom_addr(uint8_t addr) {
 		else {
 			//If > 5 bit bank number is not needed
 			if ((rom_size / 1024) / 16 < 32) {
-				return (rom_bank_num << 14) + addr;
+				return (rom_bank_num << 14) + (addr - 0x4000);
 			}
-			return (ram_bank_num << 19) + (rom_bank_num << 14) + addr;
+			return (ram_bank_num << 19) + (rom_bank_num << 14) + (addr - 0x4000);
 		}
 	case 2:
 		if (addr < 0x4000) {
 			return addr;
 		}
 		else {
-			return (rom_bank_num << 14) + addr;
+			return (rom_bank_num << 14) + (addr - 0x4000);
 		}
+	case 3:
+		if (addr < 0x4000) {
+			return addr;
+		}
+		else {
+			return (rom_bank_num << 14) + (addr - 0x4000);
+		}
+	default:
+		return addr;
 	}
 }
 
 int Cartridge::get_ram_addr(uint8_t addr) {
+	addr -= 0xA000;
 	switch (mbc_num) {
 	case 1:
 		if (banking_mode == 1) {
@@ -196,7 +205,11 @@ int Cartridge::get_ram_addr(uint8_t addr) {
 			return addr;
 		}
 	case 2:
-		return 0xA000 + (addr & 0x1FF);
+		return addr & 0x1FF;
+	case 3:
+		return ram_bank_num << 13 + addr;
+	default:
+		return addr;
 	}
 }
 
@@ -237,6 +250,7 @@ void Cartridge::write_ROM(uint16_t addr, uint8_t byte) {
 		else if (addr >= 0x6000 && addr <= 0x7FFF) {
 			banking_mode = byte & 1;
 		}
+		break;
 	case 2:
 		if (addr >= 0x0000 && addr <= 0x3FFF) {
 			if ((addr >> 8) == 0) {
@@ -253,12 +267,45 @@ void Cartridge::write_ROM(uint16_t addr, uint8_t byte) {
 				if (rom_bank_num == 0) rom_bank_num = 1;
 			}
 		}
+		break;
+	case 3:
+		if (addr >= 0x0000 && addr <= 0x1FFF) {
+			if ((byte & 0xF) == 0xA) {
+				RAM_enabled = true;
+			}
+			else if (byte == 0){
+				RAM_enabled = false;
+				save();
+			}
+		}
+		else if (addr >= 0x2000 && addr <= 0x3FFF) {
+			rom_bank_num = byte & 0x7F;
+			if (rom_bank_num == 0) rom_bank_num = 1;
+		}
+		else if (addr >= 0x4000 && addr <= 0x5FFF) {
+			if ((byte & 0xF) > 0xC) {
+				byte = 0xC;
+				LOG_WARN("To large of a value written to RAM Bank Number, defaulting to max acceptable value");
+			}
+			ram_bank_num = byte & 0xF;
+		}
+		else if (addr >= 0x6000 && addr <= 0x7FFF) {
+			//TODO: Implement RTC registers
+			LOG_WARN("Attempted latch unimplemented RTC clock");
+		}
+		break;
+	default:
+		break;
 	}
 }
 
 uint8_t Cartridge::read_RAM(uint16_t addr) {
 	if (addr >= 0xA000 && addr <= 0x7FFF) {
 		if (RAM_enabled) {
+			if (mbc_num == 3 && rom_bank_num > 0x7) {
+				LOG_WARN("Attempted read from unimplemented RTC registers, read 0x00 instead");
+				return 0x00;
+			}
 			return  RAM[get_ram_addr(addr)];
 		}
 	}
