@@ -41,6 +41,10 @@ public:
 	// When this function is called 2 M cycles have happened for the fetch step
 	void execute_CB_opcode(uint8_t opcode);
 
+	//Flag for what interrupts are requested
+	uint8_t interrupt_flag;
+
+private:
 	//Flag enum for accessing the correct bit of F for the corresponding flag
 	enum Flag {
 		Z = 1 << 7,
@@ -306,7 +310,6 @@ public:
 	//Bitwise XOR A and operand
 	void XOR(uint8_t operand);
 
-private:
 	//GB object, used to access memory
 	GB* gb;
 
@@ -335,8 +338,6 @@ private:
 	bool interrupt_master_enable;
 
 	uint8_t interrupt_enable;
-
-	uint8_t interrupt_flag;
 
 	bool halted;
 };

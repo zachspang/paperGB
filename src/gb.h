@@ -28,6 +28,21 @@ public:
 
 	int get_t_cycle_count();
 
+	//Request vblank interrupt
+	void int_vblank();
+
+	//Request stat interrupt
+	void int_stat();
+	
+	//Request timer interrupt
+	void int_timer();
+
+	//Request serial interrupt
+	void int_serial();
+
+	//Request joypad interrupt
+	void int_joypad();
+
 private: 
 	Cartridge cart;
 

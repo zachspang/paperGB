@@ -43,3 +43,20 @@ void GB::run() {
 		}
 	}
 }
+
+
+void GB::int_vblank() {
+	cpu.interrupt_flag |= 0b1;
+}
+void GB::int_stat() {
+	cpu.interrupt_flag |= 0b10;
+}
+void GB::int_timer() {
+	cpu.interrupt_flag |= 0b100;
+}
+void GB::int_serial() {
+	cpu.interrupt_flag |= 0b1000;
+}
+void GB::GB::int_joypad() {
+	cpu.interrupt_flag |= 0b10000;
+}
