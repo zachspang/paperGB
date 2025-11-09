@@ -1,5 +1,13 @@
 #include <iostream>
 #include <SDL.h>
+#include "gb.h"
+
+Cartridge* cart = new Cartridge();
+
+// Wrapper function for atexit
+void saveAtExit() {
+	cart->save();
+}
 
 int main(int argc, char* argv[]) {
 	//TODO: cleanup SDL in APU, PPU and IO
@@ -7,14 +15,11 @@ int main(int argc, char* argv[]) {
 
 	//Allocate Cartridge and GB on heap since they are large
 
-	//Cartridge cart = new Cartridge(argv[1]);
+	//cart.load_rom(argv[1])
 	//handle errors
+	atexit(saveAtExit);
 
-	//save_state = load_save_state(argv[2])
-	//handle errors
-
-
-	//GB* gameboy = new GB(cart, save_state);
+	GB* gameboy = new GB(*cart);
 	//gameboy.run()
 
 	return 0;

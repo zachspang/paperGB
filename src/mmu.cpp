@@ -16,7 +16,7 @@ uint8_t MMU::read(uint16_t addr) {
 	gb->tick_other_components();
 
 	if (addr >= 0x0000 && addr <= 0x7FFF) {
-		return gb->cart.read_ROM_bank(addr);
+		return gb->cart.read_ROM(addr);
 	}
 	else if (addr >= 0x8000 && addr <= 0x9FFF) {
 		return VRAM[addr - 0x8000];
@@ -161,9 +161,6 @@ uint8_t MMU::read(uint16_t addr) {
 	else if (addr == 0xFF4B) {
 		return gb->ppu.win_x;
 	}
-	else if (addr == 0xFF50) {
-		return gb->cart.boot_ROM_mapping;
-	}
 	else if (addr >= 0xFF80 && addr <= 0xFFFE) {
 		return HRAM[addr - 0xFF80];
 	}
@@ -181,7 +178,7 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 	gb->tick_other_components();
 
 	if (addr >= 0x0000 && addr <= 0x7FFF) {
-		gb->cart.write_ROM_bank(addr, byte);
+		gb->cart.write_ROM(addr, byte);
 	}
 	else if (addr >= 0x8000 && addr <= 0x9FFF) {
 		VRAM[addr - 0x8000] = byte;
@@ -319,9 +316,6 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 	}
 	else if (addr == 0xFF4B) {
 		gb->ppu.win_x = byte;
-	}
-	else if (addr == 0xFF50) {
-		gb->cart.boot_ROM_mapping = byte;
 	}
 	else if (addr >= 0xFF80 && addr <= 0xFFFE) {
 		HRAM[addr - 0xFF80] = byte;

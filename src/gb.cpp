@@ -29,6 +29,7 @@ int GB::get_t_cycle_count() {
 
 void GB::run() {
 	//TODO: Change to run 1 frame worth of cycles at full speed then sleep
+	//TODO: Save cart once every minute
 	const int MCYCLE_HZ = 1048576;
 	auto last_cycle_timestamp = std::chrono::steady_clock::now();
 	std::chrono::duration<double> elapsed_time;
