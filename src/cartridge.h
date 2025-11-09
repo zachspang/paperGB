@@ -44,14 +44,4 @@ private:
 
 	bool has_battery;
 	std::string save_path;
-
-	//0000-3FFF
-	uint8_t ROMBank00[16 * 1024];
-
-	//4000-7FFF, Switchable ROM bank
-	uint8_t ROMBankNN[16 * 1024];
-
-	//A000-BFFF, RAM from cartridge
-	uint8_t ExternalRAM[8 * 1024];
-
 };

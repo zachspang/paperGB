@@ -5,9 +5,6 @@
 
 Cartridge::Cartridge() {
 	mbc_num = 0;
-	memset(ROMBank00, 0, sizeof(ROMBank00));
-	memset(ROMBankNN, 0, sizeof(ROMBankNN));
-	memset(ExternalRAM, 0, sizeof(ExternalRAM));
 	RAM_enabled = false;
 	has_battery = false;
 	rom_size = 0;
@@ -58,8 +55,6 @@ bool Cartridge::load_rom(char* filepath) {
 	case 0x04: ram_size = 128 * 1024;  break;
 	case 0x05: ram_size = 64 * 1024;  break;
 	}
-
-	RAM = std::vector<uint8_t>(ram_size);
 
 	//Get MBC num and battery
 	switch (ROM[0x0147]) {
@@ -117,6 +112,13 @@ bool Cartridge::load_rom(char* filepath) {
 		has_battery = false;
 	}
 	
+	//MBC2 has 512 half-bytes of RAM in the chip
+	if (mbc_num == 2) {
+		ram_size = 512;
+	}
+
+	RAM = std::vector<uint8_t>(ram_size);
+
 	save_path = filepath;
 	int dotPos = save_path.rfind('.');
 	save_path = save_path.substr(0, dotPos) + ".sav";
@@ -148,16 +150,6 @@ void Cartridge::save() {
 	file.close();
 }
 
-uint8_t Cartridge::read_ROM(uint16_t addr) {
-	if (addr < 0x8000) {
-		return ROM[get_rom_addr(addr)];
-	}
-	else {
-		LOG_ERROR("Invalid ROM read at addr: %X", addr);
-		return 0xFF;
-	}
-}
-
 int Cartridge::get_rom_addr(uint8_t addr) {
 	switch (mbc_num) {
 	case 1:
@@ -180,6 +172,13 @@ int Cartridge::get_rom_addr(uint8_t addr) {
 			}
 			return (ram_bank_num << 19) + (rom_bank_num << 14) + addr;
 		}
+	case 2:
+		if (addr < 0x4000) {
+			return addr;
+		}
+		else {
+			return (rom_bank_num << 14) + addr;
+		}
 	}
 }
 
@@ -196,6 +195,18 @@ int Cartridge::get_ram_addr(uint8_t addr) {
 		else {
 			return addr;
 		}
+	case 2:
+		return 0xA000 + (addr & 0x1FF);
+	}
+}
+
+uint8_t Cartridge::read_ROM(uint16_t addr) {
+	if (addr < 0x8000) {
+		return ROM[get_rom_addr(addr)];
+	}
+	else {
+		LOG_ERROR("Invalid ROM read at addr: %X", addr);
+		return 0xFF;
 	}
 }
 
@@ -227,15 +238,28 @@ void Cartridge::write_ROM(uint16_t addr, uint8_t byte) {
 			banking_mode = byte & 1;
 		}
 	case 2:
-
-	default: break;
+		if (addr >= 0x0000 && addr <= 0x3FFF) {
+			if ((addr >> 8) == 0) {
+				if ((byte & 0xF) == 0xA) {
+					RAM_enabled = true;
+				}
+				else {
+					RAM_enabled = false;
+					save();
+				}
+			}
+			else {
+				rom_bank_num = byte & 0xF;
+				if (rom_bank_num == 0) rom_bank_num = 1;
+			}
+		}
 	}
 }
 
 uint8_t Cartridge::read_RAM(uint16_t addr) {
 	if (addr >= 0xA000 && addr <= 0x7FFF) {
 		if (RAM_enabled) {
-			return ExternalRAM[addr - 0xA000];
+			return  RAM[get_ram_addr(addr)];
 		}
 	}
 	LOG_ERROR("Invalid ExternalRAM read at addr: %X", addr);
@@ -245,7 +269,7 @@ uint8_t Cartridge::read_RAM(uint16_t addr) {
 
 void Cartridge::write_RAM(uint16_t addr, uint8_t byte) {
 	if (addr >= 0xA000 && addr <= 0x7FFF && RAM_enabled) {
-		ExternalRAM[addr - 0xA000] = byte;
+		RAM[get_ram_addr(addr)] = byte;
 	}
 	else {
 		LOG_ERROR("Invalid ExternalRAM write at addr: %X", addr);
