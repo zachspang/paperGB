@@ -32,6 +32,7 @@ private:
 	std::vector<uint8_t> ROM;
 	int rom_size;
 	uint8_t rom_bank_num;
+	uint8_t rom_bank_extra_bit;
 	//Map address to rom address
 	int get_rom_addr(uint8_t addr);
 

@@ -10,6 +10,8 @@ Cartridge::Cartridge() {
 	rom_bank_num = 1;
 	ram_size = 0;
 	ram_bank_num = 0;
+	banking_mode = 0;
+	rom_bank_extra_bit = 0;
 }
 
 bool Cartridge::load_rom(char* filepath) {
@@ -185,6 +187,13 @@ int Cartridge::get_rom_addr(uint8_t addr) {
 		else {
 			return (rom_bank_num << 14) + (addr - 0x4000);
 		}
+	case 5:
+		if (addr < 0x4000) {
+			return addr;
+		}
+		else {
+			return (rom_bank_extra_bit << 22) + (rom_bank_num << 14) + (addr - 0x4000);
+		}
 	default:
 		return addr;
 	}
@@ -207,6 +216,8 @@ int Cartridge::get_ram_addr(uint8_t addr) {
 	case 2:
 		return addr & 0x1FF;
 	case 3:
+		return ram_bank_num << 13 + addr;
+	case 5:
 		return ram_bank_num << 13 + addr;
 	default:
 		return addr;
@@ -292,6 +303,26 @@ void Cartridge::write_ROM(uint16_t addr, uint8_t byte) {
 		else if (addr >= 0x6000 && addr <= 0x7FFF) {
 			//TODO: Implement RTC registers
 			LOG_WARN("Attempted latch unimplemented RTC clock");
+		}
+		break;
+	case 5:
+		if (addr >= 0x0000 && addr <= 0x1FFF) {
+			if ((byte & 0xF) == 0xA) {
+				RAM_enabled = true;
+			}
+			else if (byte == 0) {
+				RAM_enabled = false;
+				save();
+			}
+		}
+		else if (addr >= 0x2000 && addr <= 0x2FFF) {
+			rom_bank_num = byte;
+		}
+		else if (addr >= 0x3000 && addr <= 0x3FFF) {
+			rom_bank_extra_bit = byte & 1;
+		}
+		else if (addr >= 0x4000 && addr <= 0x5FFF) {
+			ram_bank_num = byte & 0xF;
 		}
 		break;
 	default:
