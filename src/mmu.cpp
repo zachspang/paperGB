@@ -12,7 +12,7 @@ MMU::MMU(GB* in_gb) :
 
 uint8_t MMU::read(uint16_t addr) {
 	gb->tick_other_components();
-	read_no_tick(addr);
+	return read_no_tick(addr);
 }
 
 uint8_t MMU::read_no_tick(uint16_t addr) {

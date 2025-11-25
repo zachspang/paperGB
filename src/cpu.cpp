@@ -21,15 +21,16 @@ void WordRegister::set_word(uint16_t value) {
 CPU::CPU(GB* in_gb) :
 	gb(in_gb)
 {
-	AF.high = 0;
+    AF.high = 1;
 	AF.low = 0;
+    set_flag(Z, 1);
 	BC.high = 0;
-	BC.low = 0;
+	BC.low = 0x13;
 	DE.high = 0;
-	DE.low = 0;
-	HL.high = 0;
-	HL.low = 0;
-	SP.word = 0;
+	DE.low = 0xD8;
+	HL.high = 1;
+	HL.low = 0x4D;
+	SP.word = 0xFFFE;
 	PC = 0x100;
 	ei_scheduled = 0;
 	interrupt_master_enable = 0;
@@ -183,9 +184,9 @@ void CPU::CALL(uint16_t addr) {
 	//Extra cycle
 	gb->tick_other_components();
 	//Push high byte of addr
-	gb->mmu.write(SP.word - 1, ((PC + 1) >> 8) & 0xFF);
+	gb->mmu.write(SP.word - 1, (PC >> 8) & 0xFF);
 	//Push low byte of addr
-	gb->mmu.write(SP.word - 2, (PC + 1) & 0xFF);
+	gb->mmu.write(SP.word - 2, PC & 0xFF);
 	//Decrement SP
 	SP.word -= 2;
 	
@@ -312,7 +313,7 @@ void CPU::JR(int8_t offset) {
 	//Extra Cycles
 	gb->tick_other_components();
 
-	PC = PC + 1 + offset;
+	PC = PC + offset;
 }
 
 void CPU::LD(uint8_t& dest, uint8_t operand) {
@@ -687,7 +688,9 @@ uint8_t CPU::n8() {
 }
 
 uint16_t CPU::n16() {
-    return (gb->mmu.read(PC++) << 8) | gb->mmu.read(PC++);
+    //Immediate stored little-endian
+    PC += 2;
+    return (gb->mmu.read(PC - 1) << 8) | gb->mmu.read(PC - 2);
 }
 
 void CPU::execute_opcode(uint8_t opcode) {
@@ -952,17 +955,17 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xF0: LD(AF.high, gb->mmu.read(0xFF00 + n8()));  break;
     case 0xF1: POP(AF); break;
     case 0xF2: LD(AF.high, gb->mmu.read(0xFF00 + BC.low)); break;
-    case 0xE3: DI(); break;
-    //case 0xE4:
+    case 0xF3: DI(); break;
+    //case 0xF4:
     case 0xF5: PUSH(AF); break;
     case 0xF6: OR(n8()); break;
     case 0xF7: RST(0x30); break;
     case 0xF8: gb->tick_other_components(); LD(HL, SP.word + (int8_t)n8()); break;
     case 0xF9: gb->tick_other_components(); LD(SP, HL.get_word());  break;
     case 0xFA: LD(AF.high, gb->mmu.read(n16())); break;
-    case 0xEB: EI(); break;
-    //case 0xEC: 
-    //case 0xED: 
+    case 0xFB: EI(); break;
+    //case 0xFC: 
+    //case 0xFD: 
     case 0xFE: CP(n8()); break;
     case 0xFF: RST(0x38); break;
 

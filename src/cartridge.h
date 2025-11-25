@@ -34,7 +34,7 @@ private:
 	uint8_t rom_bank_num;
 	uint8_t rom_bank_extra_bit;
 	//Map address to rom address
-	int get_rom_addr(uint8_t addr);
+	int get_rom_addr(uint16_t addr);
 
 	//Vector for external RAM
 	std::vector<uint8_t> RAM;
@@ -42,7 +42,7 @@ private:
 	uint8_t ram_bank_num;
 	bool RAM_enabled;
 	//Map address to ram address
-	int get_ram_addr(uint8_t addr);
+	int get_ram_addr(uint16_t addr);
 
 	bool has_battery;
 	std::string save_path;

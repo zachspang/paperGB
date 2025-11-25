@@ -8,13 +8,13 @@ PPU::PPU(GB* in_gb) :
 	current_mode = OAM_scan;
 	dot_count = 0;
 	frame_done - false;
-	lcd_control = 0;
-	lcd_status = 0;
+	lcd_control = 0x91;
+	lcd_status = 0x85;
 	bg_viewport_y = 0;
 	bg_viewport_x = 0;
 	ly = 0;
 	ly_comp = 0;
-	bg_palette = 0;
+	bg_palette = 0xFC;
 	obj_palette0 = 0;
 	obj_palette1 = 0;
 	win_y = 0;
@@ -25,7 +25,7 @@ PPU::PPU(GB* in_gb) :
 
 void PPU::init_SDL() {
 	//Initialize SDL Video
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
+	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
 		LOG_ERROR("Unable to initialize SDL: %s", SDL_GetError());
 		return;
 	}
@@ -39,23 +39,22 @@ void PPU::init_SDL() {
 		0
 	);
 
-	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
-	set_renderer_color(0);
+	renderer = SDL_CreateRenderer(window, -1, 0);
 }
 
 void PPU::set_renderer_color(int color) {
 	switch (color) {
 	case 0:
-		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 1);
+		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 		break;
 	case 1:
-		SDL_SetRenderDrawColor(renderer, 170, 170, 170, 1);
+		SDL_SetRenderDrawColor(renderer, 170, 170, 170, 255);
 		break;
 	case 2:
-		SDL_SetRenderDrawColor(renderer, 85, 85, 85, 1);
+		SDL_SetRenderDrawColor(renderer, 85, 85, 85, 255);
 		break;
 	case 3:
-		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 1);
+		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 		break;
 	}
 }
@@ -144,9 +143,10 @@ uint8_t PPU::read_VRAM(uint16_t addr) {
 
 void PPU::write_VRAM(uint16_t addr, uint8_t byte) {
 	//Block if mode 3 
-	if (current_mode == Draw) {
-		return;
-	}
+	//TODO: This blocks when it shouldnt causing broken tiles in vram
+	//if (current_mode == Draw) {
+	//	return;
+	//}
 
 	addr -= 0x8000;
 	VRAM[addr] = byte;
@@ -160,6 +160,7 @@ void PPU::tick() {
 	case OAM_scan:
 		frame_done = false;
 		if (dot_count > DOTS_PER_OAM_SCAN) {
+			//SDL_RenderClear(renderer);
 			dot_count = 0;
 			lcd_status_write_bit(0, 1);
 			lcd_status_write_bit(1, 1);
@@ -222,7 +223,7 @@ void PPU::draw_line() {
 		//Get pixel color for backround, window and object
 
 		//Backround and window enabled
-		if (lcd_control_read_bit(1)) {
+		if (lcd_control_read_bit(7)) {
 			//Draw backround
 			bool bg_tilemap = lcd_control_read_bit(3);
 			uint16_t map_address = 0b1100000000000 | (bg_tilemap << 10) | (ly / 32) | tile;
@@ -242,7 +243,7 @@ void PPU::draw_line() {
 			for (int tile_x = 0; tile_x < 8; tile_x++) {
 				int x = (tile * 8) + tile_x;
 				pixel.x = x * WINDOW_SCALE_FACTOR;
-				int color = (byte1 >> (7 - tile_x)) & (byte2 >> (7 - tile_x)) & 0b11;
+				int color = (((byte2 >> (7 - tile_x)) << 1) & 0b10) | ((byte1 >> (7 - tile_x)) & 0b1);
 				set_renderer_color(color);
 				SDL_RenderFillRect(renderer, &pixel);
 			}
@@ -259,6 +260,6 @@ void PPU::draw_line() {
 }
 
 void PPU::render_frame() {
-	SDL_RenderClear(renderer);
+	SDL_PumpEvents();
 	SDL_RenderPresent(renderer);
 }

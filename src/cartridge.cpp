@@ -151,7 +151,7 @@ void Cartridge::save() {
 	file.close();
 }
 
-int Cartridge::get_rom_addr(uint8_t addr) {
+int Cartridge::get_rom_addr(uint16_t addr) {
 	switch (mbc_num) {
 	case 1:
 		if (addr < 0x4000) {
@@ -199,7 +199,7 @@ int Cartridge::get_rom_addr(uint8_t addr) {
 	}
 }
 
-int Cartridge::get_ram_addr(uint8_t addr) {
+int Cartridge::get_ram_addr(uint16_t addr) {
 	addr -= 0xA000;
 	switch (mbc_num) {
 	case 1:

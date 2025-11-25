@@ -1,3 +1,4 @@
+#pragma once
 #include "common.h"
 #include <SDL.h>
 
@@ -7,7 +8,7 @@ const int DOTS_PER_OAM_SCAN = 80;
 const int DOTS_PER_DRAW = 172;
 const int DOTS_PER_HBLANK = 204;
 const int DOTS_PER_VBLANK = 4560;
-const int WINDOW_SCALE_FACTOR = 10;
+const int WINDOW_SCALE_FACTOR = 5;
 
 class PPU {
 public:

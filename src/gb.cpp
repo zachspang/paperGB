@@ -2,7 +2,7 @@
 #include <chrono>
 
 GB::GB(Cartridge in_cart) :
-	//cart(in_cart),
+	cart(in_cart),
 	cpu(this),
 	ppu(this),
 	apu(),
@@ -10,6 +10,7 @@ GB::GB(Cartridge in_cart) :
 	timer(),
 	input()
 {
+	OAM_DMA = 0xFF;
 	t_cycle_count = 0;
 }
 
@@ -33,7 +34,6 @@ void GB::run() {
 	const int MCYCLE_HZ = 1048576;
 	auto last_cycle_timestamp = std::chrono::steady_clock::now();
 	std::chrono::duration<double> elapsed_time;
-
 	while (true) {
 		elapsed_time = (std::chrono::steady_clock::now() - last_cycle_timestamp);
 		

@@ -15,12 +15,13 @@ int main(int argc, char* argv[]) {
 
 	//Allocate Cartridge and GB on heap since they are large
 
-	//cart.load_rom(argv[1])
+	//TODO: ability to select roms with spaces
+	cart->load_rom(argv[1]);
 	//handle errors
 	atexit(saveAtExit);
 
 	GB* gameboy = new GB(*cart);
-	//gameboy.run()
+	gameboy->run();
 
 	return 0;
 }
