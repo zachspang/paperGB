@@ -16,19 +16,14 @@ public:
 private:
 	GB* gb;
 
-	//8000-9FFF
-	uint8_t VRAM[8 * 1024];
+	//Read byte and tick components without ticking a cycle, used for DMA and called by read()
+	uint8_t read_no_tick(uint16_t addr);
 
 	//C000-CFFF
 	uint8_t WRAM1[4 * 1024];
 
 	//D000-DFFF
 	uint8_t WRAM2[4 * 1024];
-	
-	//E000-FDFF, Echo RAM, use of this is prohibited
-
-	//FE00-FE9F
-	uint8_t OAM[160];
 	
 	//FF01-FF02, Serial Transfer registers unimplemented
 	//uint8_t serial[2];

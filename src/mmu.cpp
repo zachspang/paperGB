@@ -5,21 +5,22 @@
 MMU::MMU(GB* in_gb) :
 	gb(in_gb)
 {
-	memset(VRAM, 0, sizeof(VRAM));
 	memset(WRAM1, 0, sizeof(WRAM1));
 	memset(WRAM2, 0, sizeof(WRAM2));
-	memset(OAM, 0, sizeof(OAM));
 	memset(HRAM, 0, sizeof(HRAM));
 }
 
 uint8_t MMU::read(uint16_t addr) {
 	gb->tick_other_components();
+	read_no_tick(addr);
+}
 
+uint8_t MMU::read_no_tick(uint16_t addr) {
 	if (addr >= 0x0000 && addr <= 0x7FFF) {
 		return gb->cart.read_ROM(addr);
 	}
 	else if (addr >= 0x8000 && addr <= 0x9FFF) {
-		return VRAM[addr - 0x8000];
+		return gb->ppu.read_VRAM(addr);
 	}
 	else if (addr >= 0xA000 && addr <= 0xBFFF) {
 		return gb->cart.read_RAM(addr - 0xA000);
@@ -35,7 +36,7 @@ uint8_t MMU::read(uint16_t addr) {
 		return 0xFF;
 	}
 	else if (addr >= 0xFE00 && addr <= 0xFE9F) {
-		return OAM[addr - 0xFE00];
+		return gb->ppu.read_OAM(addr);
 	}
 	else if (addr >= 0xFEA0 && addr <= 0xFEFF) {
 		//Should return 0xFF during OAM block
@@ -138,7 +139,7 @@ uint8_t MMU::read(uint16_t addr) {
 		return gb->ppu.bg_viewport_x;
 	}
 	else if (addr == 0xFF44) {
-		return gb->ppu.lcd_y;
+		return gb->ppu.ly;
 	}
 	else if (addr == 0xFF45) {
 		return gb->ppu.ly_comp;
@@ -181,7 +182,7 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 		gb->cart.write_ROM(addr, byte);
 	}
 	else if (addr >= 0x8000 && addr <= 0x9FFF) {
-		VRAM[addr - 0x8000] = byte;
+		gb->ppu.write_VRAM(addr, byte);
 	}
 	else if (addr >= 0xA000 && addr <= 0xBFFF) {
 		gb->cart.write_RAM(addr - 0xA000, byte);
@@ -193,7 +194,7 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 		WRAM2[addr - 0xD000] = byte;
 	}
 	else if (addr >= 0xFE00 && addr <= 0xFE9F) {
-		OAM[addr - 0xFE00] = byte;
+		gb->ppu.write_OAM(addr, byte);
 	}
 	else if (addr == 0xFF00) {
 		gb->input.write_joypad(byte);
@@ -281,10 +282,10 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 		gb->apu.wave[addr - 0xFF30] = byte;
 	}
 	else if (addr == 0xFF40) {
-		gb->ppu.lcd_control = byte;
+		gb->ppu.lcd_control_write(byte);
 	}
 	else if (addr == 0xFF41) {
-		gb->ppu.lcd_status = byte;
+		gb->ppu.lcd_status_write(byte);
 	}
 	else if (addr == 0xFF42) {
 		gb->ppu.bg_viewport_y = byte;
@@ -293,14 +294,17 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 		gb->ppu.bg_viewport_x = byte;
 	}
 	else if (addr == 0xFF44) {
-		//lcd_y read only
+		//ly read only
 	}
 	else if (addr == 0xFF45) {
-		gb->ppu.ly_comp = byte;
+		gb->ppu.ly_comp_write(byte);
 	}
 	else if (addr == 0xFF46) {
 		gb->OAM_DMA = byte;
-		gb->ppu.start_OAM_DMA(byte);
+		//DMA transfer
+		for (int i = 0; i <=  0x9F; i++) {
+			gb->ppu.OAM[i] = read_no_tick((byte << 8) + i);
+		}
 	}
 	else if (addr == 0xFF47) {
 		gb->ppu.bg_palette = byte;
