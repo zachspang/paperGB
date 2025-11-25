@@ -160,7 +160,7 @@ void PPU::tick() {
 	case OAM_scan:
 		frame_done = false;
 		if (dot_count > DOTS_PER_OAM_SCAN) {
-			//SDL_RenderClear(renderer);
+			SDL_RenderClear(renderer);
 			dot_count = 0;
 			lcd_status_write_bit(0, 1);
 			lcd_status_write_bit(1, 1);
@@ -179,8 +179,8 @@ void PPU::tick() {
 		break;
 	case HBlank:
 		if (dot_count > DOTS_PER_HBLANK) {
-			ly_write(ly + 1);
 			draw_line();
+			ly_write(ly + 1);
 			dot_count = 0;
 			
 			if (ly == 144) {
@@ -226,7 +226,7 @@ void PPU::draw_line() {
 		if (lcd_control_read_bit(7)) {
 			//Draw backround
 			bool bg_tilemap = lcd_control_read_bit(3);
-			uint16_t map_address = 0b1100000000000 | (bg_tilemap << 10) | (ly / 32) | tile;
+			uint16_t map_address = 0b1100000000000 | (bg_tilemap << 10) | ((ly / 8) << 5) | tile;
 
 			//Index of current tile
 			uint8_t tile_index = VRAM[map_address];
