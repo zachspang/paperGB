@@ -197,7 +197,9 @@ void PPU::tick() {
 		break;
 	case VBlank:
 		//During vblank 10 invisible lines are drawn but this might not matter
-		ly_write(ly + 1);
+		if (dot_count % 456 == 0) {
+			ly_write(ly + 1);
+		}
 		if (dot_count > DOTS_PER_VBLANK) {
 			render_frame();
 			ly_write(0);

@@ -24,6 +24,8 @@ CPU::CPU(GB* in_gb) :
     AF.high = 1;
 	AF.low = 0;
     set_flag(Z, 1);
+    set_flag(H, 1);
+    set_flag(C, 1);
 	BC.high = 0;
 	BC.low = 0x13;
 	DE.high = 0;
