@@ -159,7 +159,6 @@ void PPU::tick() {
 	case OAM_scan:
 		frame_done = false;
 		if (dot_count > DOTS_PER_OAM_SCAN) {
-			SDL_RenderClear(renderer);
 			dot_count = 0;
 			lcd_status_write_bit(0, 1);
 			lcd_status_write_bit(1, 1);
@@ -264,4 +263,5 @@ void PPU::draw_line() {
 void PPU::render_frame() {
 	SDL_PumpEvents();
 	SDL_RenderPresent(renderer);
+	SDL_RenderClear(renderer);
 }
