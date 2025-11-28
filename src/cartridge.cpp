@@ -43,8 +43,7 @@ bool Cartridge::load_rom(char* filepath) {
 	}
 
 	if (checksum != ROM[0x014D]) {
-		LOG_ERROR("Failed header checksum");
-		return false;
+		LOG_WARN("Failed header checksum");
 	}
 
 	//Get RAM size

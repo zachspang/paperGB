@@ -73,6 +73,8 @@ void CPU::tick() {
         }
 
         if (interrupt_addr != 0) {
+            halted = false;
+
             //Disable IME
             ei_scheduled = false;
             interrupt_master_enable = false;
@@ -99,6 +101,7 @@ void CPU::tick() {
         gb->tick_other_components();
         if ((interrupt_enable & interrupt_flag) != 0) {
             halted = false;
+            //TODO: Implement the halt bug https://gbdev.io/pandocs/halt.html#halt-bug
         }
 	}
 }
@@ -671,7 +674,7 @@ void CPU::SWAP_mem(uint16_t addr) {
 }
 
 void CPU::XOR(uint8_t operand) {
-	AF.high = AF.high | operand;
+	AF.high = AF.high ^ operand;
 
 	set_flag(Z, AF.high == 0);
 	set_flag(N, 0);

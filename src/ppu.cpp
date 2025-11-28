@@ -113,7 +113,7 @@ void PPU::ly_comp_write(uint8_t value) {
 
 uint8_t PPU::read_OAM(uint16_t addr) {
 	//Block if mode 2 or 3 
-	if (current_mode == OAM_scan || current_mode == Draw) {
+	if ((current_mode == OAM_scan || current_mode == Draw) && lcd_control_read_bit(7)) {
 		return 0xFF;
 	}
 
@@ -123,7 +123,7 @@ uint8_t PPU::read_OAM(uint16_t addr) {
 
 void PPU::write_OAM(uint16_t addr, uint8_t byte){
 	//Block if mode 2 or 3 
-	if (current_mode == OAM_scan || current_mode == Draw) {
+	if ((current_mode == OAM_scan || current_mode == Draw) && lcd_control_read_bit(7)) {
 		return;
 	}
 
@@ -133,7 +133,7 @@ void PPU::write_OAM(uint16_t addr, uint8_t byte){
 
 uint8_t PPU::read_VRAM(uint16_t addr) {
 	//Block if mode 3 
-	if (current_mode == Draw) {
+	if (current_mode == Draw && lcd_control_read_bit(7)) {
 		return 0xFF;
 	}
 
@@ -143,10 +143,9 @@ uint8_t PPU::read_VRAM(uint16_t addr) {
 
 void PPU::write_VRAM(uint16_t addr, uint8_t byte) {
 	//Block if mode 3 
-	//TODO: This blocks when it shouldnt causing broken tiles in vram
-	//if (current_mode == Draw) {
-	//	return;
-	//}
+	if (current_mode == Draw && lcd_control_read_bit(7)) {
+		return;
+	}
 
 	addr -= 0x8000;
 	VRAM[addr] = byte;
@@ -187,11 +186,12 @@ void PPU::tick() {
 				lcd_status_write_bit(0, 1);
 				lcd_status_write_bit(1, 0);
 				current_mode = VBlank;
+				gb->int_vblank();
 			}
 			else {
-				lcd_status_write_bit(0, 1);
+				lcd_status_write_bit(0, 0);
 				lcd_status_write_bit(1, 1);
-				current_mode = Draw;
+				current_mode = OAM_scan;
 			}
 		}
 		break;
