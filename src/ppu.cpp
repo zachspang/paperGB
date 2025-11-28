@@ -223,11 +223,16 @@ void PPU::draw_line() {
 	for (int tile = 0; tile < 32; tile++) {
 		//Get pixel color for backround, window and object
 
-		//Backround and window enabled
+		//If PPU enabled
 		if (lcd_control_read_bit(7)) {
 			//Draw backround
+
+			//Which tilemap to use. Used to calculate map_address
 			bool bg_tilemap = lcd_control_read_bit(3);
-			uint16_t map_address = 0b1100000000000 | (bg_tilemap << 10) | ((ly / 8) << 5) | tile;
+
+			//map_address == 0b11 (1 bit bg_tilemap) (5 bits tile y) (5 bits tile x)
+			//This also adjusts for the viewport scrolling
+			uint16_t map_address = 0b1100000000000 | (bg_tilemap << 10) | ((((ly + bg_viewport_y) / 8) % 32) << 5) | ((tile + (bg_viewport_x / 8)) % 32);
 
 			//Index of current tile
 			uint8_t tile_index = VRAM[map_address];
@@ -238,11 +243,12 @@ void PPU::draw_line() {
 			}
 
 			//Get 2 bytes that represent 8 pixels of the current scanline
-			uint8_t byte1 = VRAM[(tile_index * 0x10) + ((ly % 8) * 2)];
-			uint8_t byte2 = VRAM[(tile_index * 0x10) + ((ly % 8) * 2) + 1];
+			uint8_t byte1 = VRAM[(tile_index * 0x10) + (((ly + bg_viewport_y) % 8) * 2)];
+			uint8_t byte2 = VRAM[(tile_index * 0x10) + (((ly + bg_viewport_y) % 8) * 2) + 1];
 
+			//Loop through pixels of line of tile
 			for (int tile_x = 0; tile_x < 8; tile_x++) {
-				int x = (tile * 8) + tile_x;
+				int x = (tile * 8) + tile_x - (bg_viewport_x % 8);
 				pixel.x = x * WINDOW_SCALE_FACTOR;
 				int color = (((byte2 >> (7 - tile_x)) << 1) & 0b10) | ((byte1 >> (7 - tile_x)) & 0b1);
 				set_renderer_color(color);
