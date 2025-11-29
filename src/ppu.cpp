@@ -5,9 +5,9 @@
 PPU::PPU(GB* in_gb) :
 	gb(in_gb) {
 	init_SDL();
-	current_mode = OAM_scan;
+	current_mode = VBlank;
 	dot_count = 0;
-	frame_done - false;
+	frame_done = false;
 	lcd_control = 0x91;
 	lcd_status = 0x85;
 	bg_viewport_y = 0;
@@ -60,7 +60,7 @@ void PPU::set_renderer_color(int color) {
 }
 
 void PPU::lcd_status_write(uint8_t byte) {
-	lcd_status = byte & 0b01111000;
+	lcd_status = (byte & 0b01111000) | (lcd_status & 0b111);
 }
 void PPU::lcd_control_write(uint8_t byte) {
 	lcd_control = byte;
@@ -71,7 +71,7 @@ void PPU::lcd_status_write_bit(uint8_t bit_index, bool bit) {
 		lcd_status |= (1 << bit_index);
 	}
 	else {
-		lcd_status &= (0 << bit_index);
+		lcd_status &= ~(1 << bit_index);
 	}
 }
 void PPU::lcd_control_write_bit(uint8_t bit_index, bool bit) {
@@ -79,7 +79,7 @@ void PPU::lcd_control_write_bit(uint8_t bit_index, bool bit) {
 		lcd_control |= (1 << bit_index);
 	}
 	else {
-		lcd_control &= (0 << bit_index);
+		lcd_control &= ~(1 << bit_index);
 	}
 }
 
@@ -92,9 +92,9 @@ bool PPU::lcd_control_read_bit(uint8_t bit_index) {
 
 void PPU::ly_write(uint8_t value) {
 	ly = value;
-	if (ly == ly_comp) {
-		gb->int_stat();
+	if (ly == ly_comp && lcd_status_read_bit(6)) {
 		lcd_status_write_bit(2, 1);
+		gb->int_stat();
 	}
 	else {
 		lcd_status_write_bit(2, 0);
@@ -102,9 +102,9 @@ void PPU::ly_write(uint8_t value) {
 }
 void PPU::ly_comp_write(uint8_t value) {
 	ly_comp = value;
-	if (ly == ly_comp) {
-		gb->int_stat();
+	if (ly == ly_comp && lcd_status_read_bit(6)) {
 		lcd_status_write_bit(2, 1);
+		gb->int_stat();
 	}
 	else {
 		lcd_status_write_bit(2, 0);
@@ -168,11 +168,11 @@ void PPU::tick() {
 	case Draw:
 		if (dot_count > DOTS_PER_DRAW) {
 			//Dont need to anything since we are drawing the entire line during HBLANK
-			//TODO: might need to check if interrupts need to be called
 			dot_count = 0;
 			lcd_status_write_bit(0, 0);
 			lcd_status_write_bit(1, 0);
 			current_mode = HBlank;
+			if (lcd_status_read_bit(3)) gb->int_stat();
 		}
 		break;
 	case HBlank:
@@ -186,11 +186,13 @@ void PPU::tick() {
 				lcd_status_write_bit(1, 0);
 				current_mode = VBlank;
 				gb->int_vblank();
+				if (lcd_status_read_bit(4)) gb->int_stat();
 			}
 			else {
 				lcd_status_write_bit(0, 0);
 				lcd_status_write_bit(1, 1);
 				current_mode = OAM_scan;
+				if (lcd_status_read_bit(5)) gb->int_stat();
 			}
 		}
 		break;
@@ -207,6 +209,7 @@ void PPU::tick() {
 			lcd_status_write_bit(0, 0);
 			lcd_status_write_bit(1, 1);
 			current_mode = OAM_scan;
+			if (lcd_status_read_bit(5)) gb->int_stat();
 			frame_done = true;
 		}
 		break;
@@ -255,9 +258,36 @@ void PPU::draw_line() {
 				SDL_RenderFillRect(renderer, &pixel);
 			}
 			
-			//Window enabled
+			//If window enabled
 			if (lcd_control_read_bit(5)) {
+				//Draw window,
+	
+				//Which tilemap to use. Used to calculate map_address
+				bool w_tilemap = lcd_control_read_bit(6);
 
+				//map_address == 0b11 (1 bit bg_tilemap) (5 bits tile y) (5 bits tile x)
+				uint16_t map_address = 0b1100000000000 | (w_tilemap << 10) | (ly << 5) | tile;
+
+				//Index of current tile
+				uint8_t tile_index = VRAM[map_address];
+
+				//Check addressing mode
+				if (!lcd_control_read_bit(4) && tile_index < 128) {
+					tile_index += 256;
+				}
+
+				//Get 2 bytes that represent 8 pixels of the current scanline
+				uint8_t byte1 = VRAM[(tile_index * 0x10) + ((ly % 8) * 2)];
+				uint8_t byte2 = VRAM[(tile_index * 0x10) + ((ly % 8) * 2) + 1];
+
+				//Loop through pixels of line of tile
+				for (int tile_x = 0; tile_x < 8; tile_x++) {
+					int x = (tile * 8) + tile_x - (bg_viewport_x % 8);
+					pixel.x = x * WINDOW_SCALE_FACTOR;
+					int color = (((byte2 >> (7 - tile_x)) << 1) & 0b10) | ((byte1 >> (7 - tile_x)) & 0b1);
+					set_renderer_color(color);
+					SDL_RenderFillRect(renderer, &pixel);
+				}
 			}
 		}
 		

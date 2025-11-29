@@ -37,7 +37,7 @@ CPU::CPU(GB* in_gb) :
 	ei_scheduled = 0;
 	interrupt_master_enable = 0;
 	interrupt_enable = 0;
-	interrupt_flag = 0;
+	interrupt_flag = 0xE1;
 	halted = false;
 }
 
