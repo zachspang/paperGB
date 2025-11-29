@@ -64,11 +64,15 @@ private:
 	uint8_t obj_palette1;
 	uint8_t win_y;
 	uint8_t win_x;
+	uint8_t win_line_counter;
+	bool wy_equals_ly;
 	uint8_t VRAM[8 * 1024];
 	uint8_t OAM[160];
 
 	void init_SDL();
 	void set_renderer_color(int color);
+	bool stat_line;
+	void check_stat();
 	void draw_line();
 	void render_frame();
 };

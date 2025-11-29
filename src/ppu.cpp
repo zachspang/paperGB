@@ -19,8 +19,11 @@ PPU::PPU(GB* in_gb) :
 	obj_palette1 = 0;
 	win_y = 0;
 	win_x = 0;
+	win_line_counter = 0;
+	wy_equals_ly = false;
 	memset(OAM, 0, sizeof(OAM));
 	memset(VRAM, 0, sizeof(VRAM));
+	stat_line = false;
 }
 
 void PPU::init_SDL() {
@@ -94,7 +97,7 @@ void PPU::ly_write(uint8_t value) {
 	ly = value;
 	if (ly == ly_comp && lcd_status_read_bit(6)) {
 		lcd_status_write_bit(2, 1);
-		gb->int_stat();
+		check_stat();
 	}
 	else {
 		lcd_status_write_bit(2, 0);
@@ -104,7 +107,7 @@ void PPU::ly_comp_write(uint8_t value) {
 	ly_comp = value;
 	if (ly == ly_comp && lcd_status_read_bit(6)) {
 		lcd_status_write_bit(2, 1);
-		gb->int_stat();
+		check_stat();
 	}
 	else {
 		lcd_status_write_bit(2, 0);
@@ -172,7 +175,6 @@ void PPU::tick() {
 			lcd_status_write_bit(0, 0);
 			lcd_status_write_bit(1, 0);
 			current_mode = HBlank;
-			if (lcd_status_read_bit(3)) gb->int_stat();
 		}
 		break;
 	case HBlank:
@@ -180,19 +182,20 @@ void PPU::tick() {
 			draw_line();
 			ly_write(ly + 1);
 			dot_count = 0;
-			
+
 			if (ly == 144) {
+				win_line_counter = 0;
+				wy_equals_ly = false;
 				lcd_status_write_bit(0, 1);
 				lcd_status_write_bit(1, 0);
 				current_mode = VBlank;
 				gb->int_vblank();
-				if (lcd_status_read_bit(4)) gb->int_stat();
 			}
 			else {
 				lcd_status_write_bit(0, 0);
 				lcd_status_write_bit(1, 1);
+				if (win_y == ly) wy_equals_ly = true;
 				current_mode = OAM_scan;
-				if (lcd_status_read_bit(5)) gb->int_stat();
 			}
 		}
 		break;
@@ -208,15 +211,39 @@ void PPU::tick() {
 			dot_count = 0;
 			lcd_status_write_bit(0, 0);
 			lcd_status_write_bit(1, 1);
+			if(win_y == ly) wy_equals_ly = true;
 			current_mode = OAM_scan;
-			if (lcd_status_read_bit(5)) gb->int_stat();
 			frame_done = true;
 		}
 		break;
 	}
+
+	check_stat();
+}
+
+//Stat interrupt is only requested when stat_line goes from false to true
+void PPU::check_stat() {
+	bool starting_stat_line = stat_line;
+	if ((lcd_status_read_bit(6) && ly == ly_comp) || 
+		(lcd_status_read_bit(5) && current_mode == 2) || 
+		(lcd_status_read_bit(4) && current_mode == 1) ||
+		(lcd_status_read_bit(3) && current_mode == 0))
+	{
+		stat_line = true;
+	}
+	else {
+		stat_line = false;
+	}
+	
+	if (starting_stat_line == false && stat_line == true) {
+		gb->int_stat();
+	}
 }
 
 void PPU::draw_line() {
+	bool win_drawn = false;
+	uint8_t win_tile = 0;
+
 	//Rectangle representing a single pixel
 	SDL_Rect pixel = SDL_Rect();
 	pixel.w = WINDOW_SCALE_FACTOR;
@@ -227,7 +254,7 @@ void PPU::draw_line() {
 		//Get pixel color for backround, window and object
 
 		//If PPU enabled
-		if (lcd_control_read_bit(7)) {
+		if (lcd_control_read_bit(7) && lcd_control_read_bit(0)) {
 			//Draw backround
 
 			//Which tilemap to use. Used to calculate map_address
@@ -238,8 +265,9 @@ void PPU::draw_line() {
 			uint16_t map_address = 0b1100000000000 | (bg_tilemap << 10) | ((((ly + bg_viewport_y) / 8) % 32) << 5) | ((tile + (bg_viewport_x / 8)) % 32);
 
 			//Index of current tile
-			uint8_t tile_index = VRAM[map_address];
+			uint16_t tile_index = VRAM[map_address];
 
+			//TODO:Addressing mode isnt switching (stops dmgacid2 footer from showing)
 			//Check addressing mode
 			if (!lcd_control_read_bit(4) && tile_index < 128) {
 				tile_index += 256;
@@ -258,42 +286,51 @@ void PPU::draw_line() {
 				SDL_RenderFillRect(renderer, &pixel);
 			}
 			
-			//If window enabled
-			if (lcd_control_read_bit(5)) {
-				//Draw window,
+			//If window enabled and wy equaled ly at some point this frame
+			if (lcd_control_read_bit(5) && wy_equals_ly) {
+				//Draw window
 	
 				//Which tilemap to use. Used to calculate map_address
 				bool w_tilemap = lcd_control_read_bit(6);
 
-				//map_address == 0b11 (1 bit bg_tilemap) (5 bits tile y) (5 bits tile x)
-				uint16_t map_address = 0b1100000000000 | (w_tilemap << 10) | (ly << 5) | tile;
+				//map_address == 0b11 (1 bit w_tilemap) (5 bits tile y) (5 bits tile x)
+				uint16_t win_map_address = 0b1100000000000 | (w_tilemap << 10) | ((win_line_counter / 8) << 5) | win_tile;
 
 				//Index of current tile
-				uint8_t tile_index = VRAM[map_address];
+				uint16_t wtile_index = VRAM[win_map_address];
 
 				//Check addressing mode
-				if (!lcd_control_read_bit(4) && tile_index < 128) {
-					tile_index += 256;
+				if (!lcd_control_read_bit(4) && wtile_index < 128) {
+					wtile_index += 256;
 				}
 
 				//Get 2 bytes that represent 8 pixels of the current scanline
-				uint8_t byte1 = VRAM[(tile_index * 0x10) + ((ly % 8) * 2)];
-				uint8_t byte2 = VRAM[(tile_index * 0x10) + ((ly % 8) * 2) + 1];
+				uint8_t wbyte1 = VRAM[(wtile_index * 0x10) + ((win_line_counter % 8) * 2)];
+				uint8_t wbyte2 = VRAM[(wtile_index * 0x10) + ((win_line_counter % 8) * 2) + 1];
 
 				//Loop through pixels of line of tile
 				for (int tile_x = 0; tile_x < 8; tile_x++) {
-					int x = (tile * 8) + tile_x - (bg_viewport_x % 8);
-					pixel.x = x * WINDOW_SCALE_FACTOR;
-					int color = (((byte2 >> (7 - tile_x)) << 1) & 0b10) | ((byte1 >> (7 - tile_x)) & 0b1);
-					set_renderer_color(color);
-					SDL_RenderFillRect(renderer, &pixel);
+					int x = (tile * 8) + tile_x;
+					if (win_x <= 166 && x + 7 >= win_x) {
+						win_drawn = true;
+						pixel.x = x * WINDOW_SCALE_FACTOR;
+						int color = (((wbyte2 >> (7 - tile_x)) << 1) & 0b10) | ((wbyte1 >> (7 - tile_x)) & 0b1);
+						set_renderer_color(color);
+						SDL_RenderFillRect(renderer, &pixel);
+					}
 				}
+				if (win_drawn) win_tile++;
 			}
 		}
-		
+
 		//TODO: draw objects
+		if (lcd_control_read_bit(7)) {
+
+		}
+
 	}
 
+	if (win_drawn) win_line_counter++;
 }
 
 void PPU::render_frame() {

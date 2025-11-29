@@ -46,28 +46,23 @@ void CPU::tick() {
     if (interrupt_master_enable) {
         uint8_t interrupt_addr = 0;
         if ((interrupt_enable & interrupt_flag & 0b1) != 0) {
-            interrupt_enable &= 0b11110;
             interrupt_flag &= 0b11110;
             interrupt_addr = 0x40;
         }
         else if ((interrupt_enable & interrupt_flag & 0b10) != 0) {
-            interrupt_enable &= 0b11101;
             interrupt_flag &= 0b11101;
             interrupt_addr = 0x48;
         }
         else if ((interrupt_enable & interrupt_flag & 0b100) != 0) {
-            interrupt_enable &= 0b11011;
             interrupt_flag &= 0b11011;
             interrupt_addr = 0x50;
         }
         else if ((interrupt_enable & interrupt_flag & 0b1000) != 0) {
             LOG_WARN("Serial interrupt requested without serial data transfer being implemented");
-            interrupt_enable &= 0b10111;
             interrupt_flag &= 0b10111;
             interrupt_addr = 0x58;
         }
         else if ((interrupt_enable & interrupt_flag & 0b10000) != 0) {
-            interrupt_enable &= 0b01111;
             interrupt_flag &= 0b01111;
             interrupt_addr = 0x60;
         }

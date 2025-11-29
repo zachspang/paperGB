@@ -48,7 +48,6 @@ void GB::run() {
 void GB::int_vblank() {
 	cpu.interrupt_flag |= 0b1;
 }
-//TODO:Implement stat blocking https://gbdev.io/pandocs/Interrupt_Sources.html#int-48--stat-interrupt
 void GB::int_stat() {
 	cpu.interrupt_flag |= 0b10;
 }
