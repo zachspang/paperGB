@@ -241,8 +241,10 @@ void PPU::check_stat() {
 }
 
 void PPU::draw_line() {
+	//Has the window conditions been true this scanline
 	bool win_drawn = false;
-	uint8_t win_tile = 0;
+	//Internal counter for what tile the window is on
+	uint8_t win_tile_x = 0;
 
 	//Rectangle representing a single pixel
 	SDL_Rect pixel = SDL_Rect();
@@ -250,86 +252,67 @@ void PPU::draw_line() {
 	pixel.h = WINDOW_SCALE_FACTOR;
 	pixel.y = ly * WINDOW_SCALE_FACTOR;
 
-	for (int tile = 0; tile < 32; tile++) {
+	//Which tilemap to use. Used to calculate map_address
+	bool tilemap;
+
+	//map_address == 0b11 (1 bit bg_tilemap) (5 bits tile y) (5 bits tile x)
+	//This also adjusts for the viewport scrolling
+	uint16_t map_address;
+
+	//Index of current tile
+	uint16_t tile_index;
+
+	//2 bytes that represent 8 pixels of the current scanline
+	uint8_t byte1;
+	uint8_t byte2;
+
+	for (int tile_x = 0; tile_x < 32; tile_x++) {
 		//Get pixel color for backround, window and object
 
-		//If PPU enabled
+		//If PPU enabled and bg/window enabled
 		if (lcd_control_read_bit(7) && lcd_control_read_bit(0)) {
-			//Draw backround
+			
+			if (win_drawn || (lcd_control_read_bit(5) && wy_equals_ly && win_x <= 166 && (tile_x * 8) + 7 >= win_x)) {
+				//Draw window
 
-			//Which tilemap to use. Used to calculate map_address
-			bool bg_tilemap = lcd_control_read_bit(3);
+				win_drawn = true;
+				tilemap = lcd_control_read_bit(6);
+				map_address = 0b1100000000000 | (tilemap << 10) | (((win_line_counter / 8) % 32) << 5) | win_tile_x;
+				tile_index = VRAM[map_address];
+				if (!lcd_control_read_bit(4) && tile_index < 128) {
+					tile_index += 256;
+				}
+				byte1 = VRAM[(tile_index * 0x10) + ((win_line_counter % 8) * 2)];
+				byte2 = VRAM[(tile_index * 0x10) + ((win_line_counter % 8) * 2) + 1];
+			} else {
+				//Draw backround
 
-			//map_address == 0b11 (1 bit bg_tilemap) (5 bits tile y) (5 bits tile x)
-			//This also adjusts for the viewport scrolling
-			uint16_t map_address = 0b1100000000000 | (bg_tilemap << 10) | ((((ly + bg_viewport_y) / 8) % 32) << 5) | ((tile + (bg_viewport_x / 8)) % 32);
-
-			//Index of current tile
-			uint16_t tile_index = VRAM[map_address];
-
-			//TODO:Addressing mode isnt switching (stops dmgacid2 footer from showing)
-			//Check addressing mode
-			if (!lcd_control_read_bit(4) && tile_index < 128) {
-				tile_index += 256;
+				tilemap = lcd_control_read_bit(3);
+				map_address = 0b1100000000000 | (tilemap << 10) | ((((ly + bg_viewport_y) / 8) % 32) << 5) | ((tile_x + (bg_viewport_x / 8)) % 32);
+				tile_index = VRAM[map_address];
+				if (!lcd_control_read_bit(4) && tile_index < 128) {
+					tile_index += 256;
+				}
+				byte1 = VRAM[(tile_index * 0x10) + (((ly + bg_viewport_y) % 8) * 2)];
+				byte2 = VRAM[(tile_index * 0x10) + (((ly + bg_viewport_y) % 8) * 2) + 1];
 			}
 
-			//Get 2 bytes that represent 8 pixels of the current scanline
-			uint8_t byte1 = VRAM[(tile_index * 0x10) + (((ly + bg_viewport_y) % 8) * 2)];
-			uint8_t byte2 = VRAM[(tile_index * 0x10) + (((ly + bg_viewport_y) % 8) * 2) + 1];
-
-			//Loop through pixels of line of tile
-			for (int tile_x = 0; tile_x < 8; tile_x++) {
-				int x = (tile * 8) + tile_x - (bg_viewport_x % 8);
+			//Loop through pixels of 1 row of tile
+			for (int pixel_x = 0; pixel_x < 8; pixel_x++) {
+				int x = (tile_x * 8) + pixel_x;
 				pixel.x = x * WINDOW_SCALE_FACTOR;
-				int color = (((byte2 >> (7 - tile_x)) << 1) & 0b10) | ((byte1 >> (7 - tile_x)) & 0b1);
+				int color = (((byte2 >> (7 - pixel_x)) << 1) & 0b10) | ((byte1 >> (7 - pixel_x)) & 0b1);
 				set_renderer_color(color);
 				SDL_RenderFillRect(renderer, &pixel);
 			}
-			
-			//If window enabled and wy equaled ly at some point this frame
-			if (lcd_control_read_bit(5) && wy_equals_ly) {
-				//Draw window
-	
-				//Which tilemap to use. Used to calculate map_address
-				bool w_tilemap = lcd_control_read_bit(6);
-
-				//map_address == 0b11 (1 bit w_tilemap) (5 bits tile y) (5 bits tile x)
-				uint16_t win_map_address = 0b1100000000000 | (w_tilemap << 10) | ((win_line_counter / 8) << 5) | win_tile;
-
-				//Index of current tile
-				uint16_t wtile_index = VRAM[win_map_address];
-
-				//Check addressing mode
-				if (!lcd_control_read_bit(4) && wtile_index < 128) {
-					wtile_index += 256;
-				}
-
-				//Get 2 bytes that represent 8 pixels of the current scanline
-				uint8_t wbyte1 = VRAM[(wtile_index * 0x10) + ((win_line_counter % 8) * 2)];
-				uint8_t wbyte2 = VRAM[(wtile_index * 0x10) + ((win_line_counter % 8) * 2) + 1];
-
-				//Loop through pixels of line of tile
-				for (int tile_x = 0; tile_x < 8; tile_x++) {
-					int x = (tile * 8) + tile_x;
-					if (win_x <= 166 && x + 7 >= win_x) {
-						win_drawn = true;
-						pixel.x = x * WINDOW_SCALE_FACTOR;
-						int color = (((wbyte2 >> (7 - tile_x)) << 1) & 0b10) | ((wbyte1 >> (7 - tile_x)) & 0b1);
-						set_renderer_color(color);
-						SDL_RenderFillRect(renderer, &pixel);
-					}
-				}
-				if (win_drawn) win_tile++;
-			}
+			if (win_drawn) win_tile_x++;
 		}
 
 		//TODO: draw objects
 		if (lcd_control_read_bit(7)) {
 
 		}
-
 	}
-
 	if (win_drawn) win_line_counter++;
 }
 
