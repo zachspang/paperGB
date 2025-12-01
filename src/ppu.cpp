@@ -63,7 +63,7 @@ void PPU::set_renderer_color(int color) {
 }
 
 void PPU::lcd_status_write(uint8_t byte) {
-	lcd_status = (byte & 0b01111000) | (lcd_status & 0b111);
+	lcd_status = (byte & 0b01111000) | (lcd_status & 0b10000111);
 }
 void PPU::lcd_control_write(uint8_t byte) {
 	lcd_control = byte;

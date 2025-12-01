@@ -196,11 +196,14 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 	else if (addr >= 0xFE00 && addr <= 0xFE9F) {
 		gb->ppu.write_OAM(addr, byte);
 	}
+	else if (addr >= 0xFEA0 && addr <= 0xFEFF) {
+		//Unwritable
+	}
 	else if (addr == 0xFF00) {
 		gb->input.write_joypad(byte);
 	}
 	else if (addr == 0xFF01) {
-		LOG("SERIAL PORT: %c",byte);
+		//LOG("SERIAL PORT: %c",byte);
 	}
 	else if (addr == 0xFF02) {
 		//ignore
