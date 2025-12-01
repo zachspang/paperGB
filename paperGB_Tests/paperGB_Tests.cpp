@@ -31,7 +31,10 @@ namespace paperGBTests
 				Assert::Fail(L"Failed to parse Opcodes.json");
 			}
 
+			file.close();
+
 			Cartridge* cart = new Cartridge();
+			cart->load_rom("..\\..\\paperGB_Tests\\blank.gb");
 			GB* gameboy = new GB(*cart);
 			CPU cpu = CPU(gameboy);
 			int start = 0;
@@ -94,6 +97,8 @@ namespace paperGBTests
 
 				Assert::AreEqual(cycles[0], end - start, message.str().c_str());
 			}
+
+			SDL_Quit();
 		}
 
 		TEST_METHOD(cb_opcode_timings)
@@ -111,7 +116,10 @@ namespace paperGBTests
 				Assert::Fail(L"Failed to parse Opcodes.json");
 			}
 
+			file.close();
+
 			Cartridge* cart = new Cartridge();
+			cart->load_rom("..\\..\\paperGB_Tests\\blank.gb");
 			GB* gameboy = new GB(*cart);
 			CPU cpu = CPU(gameboy);
 			int start = 0;
@@ -150,6 +158,8 @@ namespace paperGBTests
 
 				Assert::AreEqual(cycles[0], end - start, message.str().c_str());
 			}
+
+			SDL_Quit();
 		}
 	};
 }
