@@ -253,7 +253,11 @@ void Cartridge::write_ROM(uint16_t addr, uint8_t byte) {
 				rom_bank_num = 1;
 			}
 			else {
-				rom_bank_num = byte & ((rom_size / 1024) / 16);
+				//Mask unneeded bits
+				if (byte > ((rom_size / 1024) / 16)) {
+					byte &= (1 << ((rom_size / 1024) / 16)) - 1;
+				}
+				rom_bank_num = byte;
 			}
 		}
 		else if (addr >= 0x4000 && addr <= 0x5FFF) {
