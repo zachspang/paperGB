@@ -155,14 +155,14 @@ void CPU::ADD_SP_E8(int8_t operand) {
 	//Extra Cycle
 	gb->tick_other_components();
 
-	uint32_t result = SP.get_word() + operand;
+    int result = SP.get_word() + operand;
 
-	set_flag(Z, 0);
-	set_flag(N, 0);
-	set_flag(H, (((SP.get_word() & 0xFFF) + (operand & 0xFFF)) & 0x1000) == 0x1000);
-	set_flag(C, result > 0xFFFF);
+    set_flag(Z, 0);
+    set_flag(N, 0);
+    set_flag(H,((SP.get_word() ^ operand ^ (result & 0xFFFF)) & 0x10) == 0x10);
+    set_flag(C,((SP.get_word() ^ operand ^ (result & 0xFFFF)) & 0x100) == 0x100);
 
-	SP.set_word(result & 0xFFFF);
+    SP.set_word((uint16_t)result);
 }
 
 void CPU::AND(uint8_t operand) {
@@ -175,7 +175,7 @@ void CPU::AND(uint8_t operand) {
 }
 
 void CPU::BIT(uint8_t bit_idx, uint8_t operand) {
-	set_flag(Z, (operand >> bit_idx) ^ 1);
+    set_flag(Z, ((operand >> bit_idx) & 1) == 0);
 	set_flag(N, 0);
 	set_flag(H, 1);
 }
@@ -197,7 +197,7 @@ void CPU::CALL(uint16_t addr) {
 void CPU::CCF() {
 	set_flag(N, 0);
 	set_flag(H, 0);
-	set_flag(C, get_flag(C));
+	set_flag(C, !get_flag(C));
 }
 
 void CPU::CP(uint8_t operand) {
@@ -324,6 +324,20 @@ void CPU::LD(Register& dest, uint16_t operand) {
 	dest.set_word(operand);
 }
 
+void CPU::LD_HL_SP_E8(int8_t operand) {
+    //Extra Cycle
+    gb->tick_other_components();
+
+    int result = SP.get_word() + operand;
+
+    set_flag(Z, 0);
+    set_flag(N, 0);
+    set_flag(H, ((SP.get_word() ^ operand ^ (result & 0xFFFF)) & 0x10) == 0x10);
+    set_flag(C, ((SP.get_word() ^ operand ^ (result & 0xFFFF)) & 0x100) == 0x100);
+
+    HL.set_word((uint16_t)result);
+}
+
 void CPU::LD_mem(uint16_t addr, uint8_t operand) {
     gb->mmu.write(addr, operand);
 }
@@ -370,13 +384,9 @@ void CPU::POP(Register& dest) {
 	dest.set_word(popped_addr);
 	SP.word += 2;
 
-	//Only POP AF sets flags
 	if (&dest == &AF) {
-		set_flag(Z, (AF.low >> 7) | 1);
-		set_flag(N, (AF.low >> 6) | 1);
-		set_flag(H, (AF.low >> 5) | 1);
-		set_flag(C, (AF.low >> 4) | 1);
-	}
+        AF.low &= 0b11110000;
+    }
 }
 
 void CPU::PUSH(ByteRegisterPair& reg) {
@@ -540,15 +550,16 @@ void CPU::RST(uint8_t tgt) {
 }
 
 void CPU::SBC(uint8_t operand) {
-	operand += get_flag(C);
-	uint8_t result = AF.high - operand;
+    uint8_t carry = get_flag(C);
 
-	set_flag(Z, result == 0);
-	set_flag(N, 1);
-	set_flag(H, (((AF.high & 0xF) - (operand & 0xF)) & 0x10) == 0x10);
-	set_flag(C, operand > AF.high);
+    int result = AF.high - operand - carry;
 
-	AF.high = result;
+    set_flag(Z, (uint8_t)result == 0);
+    set_flag(N, 1);
+    set_flag(H, ((AF.high & 0xF) - (operand & 0xF) - carry) < 0);
+    set_flag(C, result < 0);
+
+    AF.high = (uint8_t)result;
 }
 
 void CPU::SCF() {
@@ -634,14 +645,14 @@ void CPU::STOP() {
 }
 
 void CPU::SUB(uint8_t operand) {
-	uint8_t result = AF.high - operand;
+    int result = AF.high - operand;
 
-	set_flag(Z, result == 0);
-	set_flag(N, 1);
-	set_flag(H, (((AF.high & 0xF) - (operand & 0xF)) & 0x10) == 0x10);
-	set_flag(C, operand > AF.high);
+    set_flag(Z, (uint8_t)result == 0);
+    set_flag(N, 1);
+    set_flag(H, ((AF.high & 0xF) - (operand & 0xF)) < 0);
+    set_flag(C, result < 0);
 
-	AF.high = result;
+    AF.high = (uint8_t)result;
 }
 
 void CPU::SWAP(uint8_t& dest) {
@@ -960,7 +971,7 @@ void CPU::execute_opcode(uint8_t opcode) {
     case 0xF5: PUSH(AF); break;
     case 0xF6: OR(n8()); break;
     case 0xF7: RST(0x30); break;
-    case 0xF8: gb->tick_other_components(); LD(HL, SP.word + (int8_t)n8()); break;
+    case 0xF8: LD_HL_SP_E8(n8()); break;
     case 0xF9: gb->tick_other_components(); LD(SP, HL.get_word());  break;
     case 0xFA: LD(AF.high, gb->mmu.read(n16())); break;
     case 0xFB: EI(); break;

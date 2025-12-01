@@ -120,7 +120,7 @@ bool Cartridge::load_rom(char* filepath) {
 	RAM = std::vector<uint8_t>(ram_size);
 
 	save_path = filepath;
-	int dotPos = save_path.rfind('.');
+	size_t dotPos = save_path.rfind('.');
 	save_path = save_path.substr(0, dotPos) + ".sav";
 
 	//Load save game or create blank save 
@@ -137,6 +137,8 @@ bool Cartridge::load_rom(char* filepath) {
 		}
 		file.close();
 	}
+
+	return true;
 }
 
 void Cartridge::save() {
@@ -207,7 +209,7 @@ int Cartridge::get_ram_addr(uint16_t addr) {
 			if ((ram_size / 1024) / 8 == 1) {
 				return addr;
 			}
-			return ram_bank_num << 13 + addr;
+			return (ram_bank_num << 13) + addr;
 		}
 		else {
 			return addr;
@@ -215,9 +217,9 @@ int Cartridge::get_ram_addr(uint16_t addr) {
 	case 2:
 		return addr & 0x1FF;
 	case 3:
-		return ram_bank_num << 13 + addr;
+		return (ram_bank_num << 13) + addr;
 	case 5:
-		return ram_bank_num << 13 + addr;
+		return (ram_bank_num << 13) + addr;
 	default:
 		return addr;
 	}

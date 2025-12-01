@@ -199,6 +199,12 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 	else if (addr == 0xFF00) {
 		gb->input.write_joypad(byte);
 	}
+	else if (addr == 0xFF01) {
+		LOG("SERIAL PORT: %c",byte);
+	}
+	else if (addr == 0xFF02) {
+		//ignore
+	}
 	else if (addr == 0xFF04) {
 		//Writing any byte resets the DIV register
 		gb->timer.DIV =0;  
@@ -329,5 +335,6 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 	}
 	else {
 		//Unmapped address
+		LOG_WARN("Write to unmapped address, %X", addr);
 	}
 }

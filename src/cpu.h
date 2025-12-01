@@ -44,7 +44,6 @@ public:
 	//Flag for what interrupts are requested
 	uint8_t interrupt_flag;
 
-private:
 	//Flag enum for accessing the correct bit of F for the corresponding flag
 	enum Flag {
 		Z = 1 << 7,
@@ -59,6 +58,7 @@ private:
 	//Get flag from F register
 	bool get_flag(Flag flag);
 
+private:
 	
 	/*
 	============================================================================
@@ -165,6 +165,10 @@ private:
 
 	//Copy value of operand to dest
 	void LD(Register& dest, uint16_t operand);
+
+	//Copy value of SP+e8
+	// Ticks 1 M-Cycles
+	void LD_HL_SP_E8(int8_t operand);
 
 	//Copy value of operand to memory location addr
 	// Ticks 1 M-Cycles
