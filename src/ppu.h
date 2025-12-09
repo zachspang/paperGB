@@ -70,7 +70,7 @@ private:
 	uint8_t OAM[160];
 
 	void init_SDL();
-	void set_renderer_color(int color);
+	void set_renderer_color(int id, uint8_t palette);
 	bool stat_line;
 	void check_stat();
 	void draw_line();

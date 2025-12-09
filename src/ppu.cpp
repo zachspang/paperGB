@@ -45,7 +45,8 @@ void PPU::init_SDL() {
 	renderer = SDL_CreateRenderer(window, -1, 0);
 }
 
-void PPU::set_renderer_color(int color) {
+void PPU::set_renderer_color(int id, uint8_t palette) {
+	int color = (palette >> (id * 2)) & 0b11;
 	switch (color) {
 	case 0:
 		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
@@ -241,37 +242,38 @@ void PPU::check_stat() {
 }
 
 void PPU::draw_line() {
-	//Has the window conditions been true this scanline
-	bool win_drawn = false;
-	//Internal counter for what tile the window is on
-	uint8_t win_tile_x = 0;
-
 	//Rectangle representing a single pixel
 	SDL_Rect pixel = SDL_Rect();
 	pixel.w = WINDOW_SCALE_FACTOR;
 	pixel.h = WINDOW_SCALE_FACTOR;
 	pixel.y = ly * WINDOW_SCALE_FACTOR;
 
-	//Which tilemap to use. Used to calculate map_address
-	bool tilemap;
+	//Used to check bg color ids to determine object priority
+	int bg_color_ids[8 * 32];
+	memset(bg_color_ids, 0, sizeof(bg_color_ids));
 
-	//map_address == 0b11 (1 bit bg_tilemap) (5 bits tile y) (5 bits tile x)
-	//This also adjusts for the viewport scrolling
-	uint16_t map_address;
+	//If PPU enabled and bg/window enabled
+	if (lcd_control_read_bit(7) && lcd_control_read_bit(0)) {
+		//Has the window conditions been true this scanline
+		bool win_drawn = false;
+		//Internal counter for what tile the window is on
+		uint8_t win_tile_x = 0;
 
-	//Index of current tile
-	uint16_t tile_index;
+		//Which tilemap to use. Used to calculate map_address
+		bool tilemap;
 
-	//2 bytes that represent 8 pixels of the current scanline
-	uint8_t byte1;
-	uint8_t byte2;
+		//map_address == 0b11 (1 bit bg_tilemap) (5 bits tile y) (5 bits tile x)
+		//This also adjusts for the viewport scrolling
+		uint16_t map_address;
 
-	for (int tile_x = 0; tile_x < 32; tile_x++) {
-		//Get pixel color for backround, window and object
+		//Index of current tile
+		uint16_t tile_index;
 
-		//If PPU enabled and bg/window enabled
-		if (lcd_control_read_bit(7) && lcd_control_read_bit(0)) {
-			
+		//2 bytes that represent 8 pixels of the current scanline
+		uint8_t byte1;
+		uint8_t byte2;
+
+		for (int tile_x = 0; tile_x < 32; tile_x++) {
 			if (win_drawn || (lcd_control_read_bit(5) && wy_equals_ly && win_x <= 166 && (tile_x * 8) + 7 >= win_x)) {
 				//Draw window
 
@@ -284,7 +286,8 @@ void PPU::draw_line() {
 				}
 				byte1 = VRAM[(tile_index * 0x10) + ((win_line_counter % 8) * 2)];
 				byte2 = VRAM[(tile_index * 0x10) + ((win_line_counter % 8) * 2) + 1];
-			} else {
+			}
+			else {
 				//Draw backround
 
 				tilemap = lcd_control_read_bit(3);
@@ -297,23 +300,122 @@ void PPU::draw_line() {
 				byte2 = VRAM[(tile_index * 0x10) + (((ly + bg_viewport_y) % 8) * 2) + 1];
 			}
 
-			//Loop through pixels of 1 row of tile
+			//Draw 8 pixels of this tile
 			for (int pixel_x = 0; pixel_x < 8; pixel_x++) {
 				int x = (tile_x * 8) + pixel_x;
 				pixel.x = x * WINDOW_SCALE_FACTOR;
-				int color = (((byte2 >> (7 - pixel_x)) << 1) & 0b10) | ((byte1 >> (7 - pixel_x)) & 0b1);
-				set_renderer_color(color);
+
+				int color_id = (((byte2 >> (7 - pixel_x)) << 1) & 0b10) | ((byte1 >> (7 - pixel_x)) & 0b1);
+				bg_color_ids[x] = color_id;
+
+				set_renderer_color(color_id, bg_palette);
 				SDL_RenderFillRect(renderer, &pixel);
 			}
 			if (win_drawn) win_tile_x++;
 		}
 
-		//TODO: draw objects
-		if (lcd_control_read_bit(7)) {
+		if (win_drawn) win_line_counter++;
+	}
 
+	//If PPU and objects are enabled
+	if (lcd_control_read_bit(7) && lcd_control_read_bit(1)) {
+		//Draw objects
+
+		//Array for each pixel if the scanline. When an object draws an opaque pixel obj_opaque_x_coords[x] = obj_x
+		// This is used to determine priority between objects with overlapping opaque pixels
+		int obj_opaque_x_coords[255];
+		memset(obj_opaque_x_coords, 0, sizeof(obj_opaque_x_coords));
+		int obj_this_scanline = 0;
+		
+		int obj_height = 8;
+		if (lcd_control_read_bit(2)) {
+			obj_height = 16;
+		}
+
+		for (int object_id = 0; object_id < 40; object_id++) {
+			uint8_t obj_y = OAM[object_id * 4];
+			//The line of the obj tile that will be drawn, 
+			// if this is less than 0 or greater than or equal to the object height this object is not on this scanline
+			int obj_tile_y = ly - (obj_y - 16);
+
+			//If object is not on this scanline continue
+			if (obj_tile_y < 0 || obj_tile_y >= obj_height) {
+				continue;
+			}
+
+			obj_this_scanline++;
+			//If 10 objects have already been drawn this scanline stop drawing objects
+			if (obj_this_scanline > 10) {
+				break;
+			}
+
+			uint8_t obj_x = OAM[(object_id * 4) + 1];
+			uint8_t obj_tile_index = OAM[(object_id * 4) + 2];
+			uint8_t obj_flags = OAM[(object_id * 4) + 3];
+
+			uint8_t obj_palette;
+			//Palette selection
+			if ((obj_flags >> 4) & 1) {
+				obj_palette = obj_palette1;
+			}
+			else {
+				obj_palette = obj_palette0;
+			}
+
+			bool xflip = false;
+			//X flip
+			if ((obj_flags >> 5) & 1) {
+				xflip = true;
+			}
+
+			//Y flip
+			if ((obj_flags >> 6) & 1) {
+				if (obj_height == 16) {
+					obj_tile_y = 15 - obj_tile_y;
+				}
+				else {
+					obj_tile_y = 7 - obj_tile_y;
+				}
+			}
+
+			//In 8x16 mode lsb is ignored, in the lower tile the lsb is always one and in the upper tile the lsb is 0
+			if (obj_height == 16) {
+				if (obj_tile_y > 7) {
+					obj_tile_index |= 0x01;
+				}
+				else {
+					obj_tile_index &= 0xFE;
+				}
+			}
+
+			bool bg_priority = false;
+			//Priority
+			if ((obj_flags >> 7) & 1) {
+				bg_priority = true;
+			}
+
+			uint8_t byte1 = VRAM[(obj_tile_index * 0x10) + ((obj_tile_y % 8) * 2)];
+			uint8_t byte2 = VRAM[(obj_tile_index * 0x10) + ((obj_tile_y % 8) * 2) + 1];
+
+			//Draw 8 pixels of object tile
+			for (int i = 0; i < 8; i++) {
+				int pixel_x = xflip ? (7 - i) : i;
+				int x = obj_x - 8 + i;
+				pixel.x = x * WINDOW_SCALE_FACTOR;
+
+				if (bg_priority && bg_color_ids[x] > 0) continue;
+				int color_id = (((byte2 >> (7 - pixel_x)) << 1) & 0b10) | ((byte1 >> (7 - pixel_x)) & 0b1);
+				if (color_id == 0) continue;
+
+				//If an object with higher priority has already drawn an opaque pixel at this coord continue
+				if (obj_opaque_x_coords[x] != 0 && obj_x >= obj_opaque_x_coords[x]) continue;
+				obj_opaque_x_coords[x] = obj_x;
+
+				set_renderer_color(color_id, obj_palette);
+				SDL_RenderFillRect(renderer, &pixel);
+			}
 		}
 	}
-	if (win_drawn) win_line_counter++;
 }
 
 void PPU::render_frame() {
