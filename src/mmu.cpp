@@ -170,7 +170,7 @@ uint8_t MMU::read_no_tick(uint16_t addr) {
 	}
 	else {
 		//Unmapped addresss
-		LOG_ERROR("Invalid read at addr: 0x%X", addr);
+		LOG_WARN("Invalid read at addr: 0x%X", addr);
 		return 0xFF;
 	}
 }
