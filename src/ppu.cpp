@@ -161,7 +161,6 @@ void PPU::tick() {
 	//When a mode should be done, its entire duration is executed in one cycle instead of executing each dot individually
 	switch (current_mode) {
 	case OAM_scan:
-		frame_done = false;
 		if (dot_count > DOTS_PER_OAM_SCAN) {
 			dot_count = 0;
 			lcd_status_write_bit(0, 1);
@@ -214,7 +213,6 @@ void PPU::tick() {
 			lcd_status_write_bit(1, 1);
 			if(win_y == ly) wy_equals_ly = true;
 			current_mode = OAM_scan;
-			frame_done = true;
 		}
 		break;
 	}
@@ -422,4 +420,5 @@ void PPU::render_frame() {
 	SDL_PumpEvents();
 	SDL_RenderPresent(renderer);
 	SDL_RenderClear(renderer);
+	frame_done = true;
 }

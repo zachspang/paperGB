@@ -16,6 +16,8 @@ public:
 
 	PPU(GB* in_gb);
 
+	bool frame_done;
+
 	//Can only write to bits 6-3
 	void lcd_status_write(uint8_t byte);
 	void lcd_control_write(uint8_t byte);
@@ -45,7 +47,6 @@ private:
 	//How many dots have passed this current PPU mode
 	int dot_count;
 	SDL_Renderer* renderer;
-	bool frame_done;
 
 	void lcd_status_write_bit(uint8_t bit_index, bool bit);
 	void lcd_control_write_bit(uint8_t bit_index, bool bit);
