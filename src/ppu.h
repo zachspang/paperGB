@@ -53,11 +53,20 @@ private:
 	bool lcd_status_read_bit(uint8_t bit_index);
 	bool lcd_control_read_bit(uint8_t bit_index);
 	void ly_write(uint8_t value);
+	//Update bg_viewport x and y by setting them to the values stored in temp_bg_viewport_x/y
+	//Should only be called at end of Mode 3 (Draw).
+	void update_bg_viewports();
 
 	uint8_t lcd_control;
 	uint8_t lcd_status;
+	//scy register used in calculations, not updated on write to register, only updated with update_bg_viewports()
 	uint8_t bg_viewport_y;
+	//temp scy register, NOT used in calculations, this is updated on write to scy
+	uint8_t temp_bg_viewport_y;
+	//scx register used in calculations, not updated on write to register, only updated with update_bg_viewports()
 	uint8_t bg_viewport_x;
+	//temp scx register, NOT used in calculations, this is updated on write to scx
+	uint8_t temp_bg_viewport_x;
 	uint8_t ly;
 	uint8_t ly_comp;
 	uint8_t bg_palette;

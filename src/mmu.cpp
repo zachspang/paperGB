@@ -297,10 +297,10 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 		gb->ppu.lcd_status_write(byte);
 	}
 	else if (addr == 0xFF42) {
-		gb->ppu.bg_viewport_y = byte;
+		gb->ppu.temp_bg_viewport_y = byte;
 	}
 	else if (addr == 0xFF43) {
-		gb->ppu.bg_viewport_x = byte;
+		gb->ppu.temp_bg_viewport_x = byte;
 	}
 	else if (addr == 0xFF44) {
 		//ly read only

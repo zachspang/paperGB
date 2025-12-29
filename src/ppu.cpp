@@ -155,6 +155,11 @@ void PPU::write_VRAM(uint16_t addr, uint8_t byte) {
 	VRAM[addr] = byte;
 }
 
+void PPU::update_bg_viewports() {
+	bg_viewport_x = temp_bg_viewport_x;
+	bg_viewport_y = temp_bg_viewport_y;
+}
+
 void PPU::tick() {
 	dot_count++;
 
@@ -171,6 +176,7 @@ void PPU::tick() {
 	case Draw:
 		if (dot_count > DOTS_PER_DRAW) {
 			//Dont need to anything since we are drawing the entire line during HBLANK
+			update_bg_viewports();
 			dot_count = 0;
 			lcd_status_write_bit(0, 0);
 			lcd_status_write_bit(1, 0);
@@ -200,7 +206,7 @@ void PPU::tick() {
 		}
 		break;
 	case VBlank:
-		//During vblank 10 invisible lines are drawn but this might not matter
+		//During vblank 10 invisible lines are drawn
 		if (dot_count % 456 == 0) {
 			ly_write(ly + 1);
 		}
