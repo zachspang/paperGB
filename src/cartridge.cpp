@@ -230,7 +230,7 @@ uint8_t Cartridge::read_ROM(uint16_t addr) {
 		return ROM[get_rom_addr(addr)];
 	}
 	else {
-		LOG_ERROR("Invalid ROM read at addr: %X", addr);
+		//LOG_WARN("Invalid ROM read at addr: %X", addr);
 		return 0xFF;
 	}
 }
@@ -345,7 +345,7 @@ uint8_t Cartridge::read_RAM(uint16_t addr) {
 			return  RAM[get_ram_addr(addr)];
 		}
 	}
-	LOG_ERROR("Invalid ExternalRAM read at addr: %X", addr);
+	//LOG_WARN("Invalid ExternalRAM read at addr: %X", addr);
 	//Return garbage value
 	return 0xFF;
 }
@@ -355,6 +355,6 @@ void Cartridge::write_RAM(uint16_t addr, uint8_t byte) {
 		RAM[get_ram_addr(addr)] = byte;
 	}
 	else {
-		LOG_ERROR("Invalid ExternalRAM write at addr: %X", addr);
+		//LOG_WARN("Invalid ExternalRAM write at addr: %X", addr);
 	}
 }
