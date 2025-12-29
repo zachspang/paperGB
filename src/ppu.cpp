@@ -301,7 +301,7 @@ void PPU::draw_line() {
 			//Draw 8 pixels of this tile
 			for (int pixel_x = 0; pixel_x < 8; pixel_x++) {
 				int x = (tile_x * 8) + pixel_x;
-				pixel.x = x * WINDOW_SCALE_FACTOR;
+				pixel.x = (x - (bg_viewport_x % 8)) * WINDOW_SCALE_FACTOR;
 
 				int color_id = (((byte2 >> (7 - pixel_x)) << 1) & 0b10) | ((byte1 >> (7 - pixel_x)) & 0b1);
 				bg_color_ids[x] = color_id;
