@@ -125,16 +125,19 @@ bool Cartridge::load_rom(char* filepath) {
 
 	//Load save game or create blank save 
 	if (has_battery) {
-		std::fstream file(save_path, std::ios::binary);
+		std::fstream file(save_path, std::ios::in | std::ios::out |std::ios::binary);
 		if (!file) {
-			LOG_ERROR("Failed to open/create save");
+			LOG_ERROR("Failed to open save");
+			std::fill(RAM.begin(), RAM.end(), 0);
+		}
+		else {
+			file.read(reinterpret_cast<char*>(RAM.data()), ram_size);
+
+			if (file.fail()) {
+				LOG_ERROR("Failed to read save");
+			}
 		}
 
-		file.read(reinterpret_cast<char*>(RAM.data()), ram_size);
-
-		if (file.fail()) {
-			LOG_ERROR("Failed to read save");
-		}
 		file.close();
 	}
 
@@ -336,9 +339,9 @@ void Cartridge::write_ROM(uint16_t addr, uint8_t byte) {
 }
 
 uint8_t Cartridge::read_RAM(uint16_t addr) {
-	if (addr >= 0xA000 && addr <= 0x7FFF) {
+	if (addr < ram_size) {
 		if (RAM_enabled) {
-			if (mbc_num == 3 && rom_bank_num > 0x7) {
+			if (mbc_num == 3 && ram_bank_num > 0x7) {
 				LOG_WARN("Attempted read from unimplemented RTC registers, read 0x00 instead");
 				return 0x00;
 			}
@@ -351,7 +354,7 @@ uint8_t Cartridge::read_RAM(uint16_t addr) {
 }
 
 void Cartridge::write_RAM(uint16_t addr, uint8_t byte) {
-	if (addr >= 0xA000 && addr <= 0x7FFF && RAM_enabled) {
+	if (addr < ram_size) {
 		RAM[get_ram_addr(addr)] = byte;
 	}
 	else {
