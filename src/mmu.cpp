@@ -210,7 +210,7 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 	}
 	else if (addr == 0xFF04) {
 		//Writing any byte resets the DIV register
-		gb->timer.DIV =0;  
+		gb->timer.DIV = 0;  
 	}
 	else if (addr == 0xFF05) {
 		gb->timer.TIMA = byte;

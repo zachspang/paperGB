@@ -8,7 +8,7 @@ GB::GB(Cartridge in_cart) :
 	ppu(this),
 	apu(),
 	mmu(this),
-	timer(),
+	timer(this),
 	input()
 {
 	OAM_DMA = 0xFF;
