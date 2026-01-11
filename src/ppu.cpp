@@ -161,6 +161,23 @@ void PPU::update_bg_viewports() {
 }
 
 void PPU::tick() {
+	//If ppu disabled ly should be 0 and ppu should be in hblank
+	//With the way modes here are implemented this would skip ly = 0 when enabling the ppu
+	// so lcd_status is set as HBlank incase the game wants to check the mode but current_mode 
+	// is set to the last dot of VBlank so OAM_scan will start at ly = 0 when ppu is enabled
+	if (!lcd_control_read_bit(7)) {
+		//TODO: Kirbys Pinball World relies on accurate PPU enabling/disabling at the startup screen. The code below introduced a bug where DE is 
+		// 1 too high and HL is 1 too low compared to BGB (I couldnt find the PC where I originally noticed this). This didnt seem to have any noticable
+		// effect but this might cause issues at some point. The issue could also be related a slight desync with the PPU ticks being CPU driven instead 
+		// of happening at the same time
+		ly_write(0);
+		dot_count = 4560;
+		lcd_status_write_bit(0, 0);
+		lcd_status_write_bit(1, 0);
+		current_mode = VBlank;
+		return;
+	}
+
 	dot_count++;
 
 	//When a mode should be done, its entire duration is executed in one cycle instead of executing each dot individually
