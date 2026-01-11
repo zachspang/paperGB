@@ -222,7 +222,7 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 		gb->timer.TAC = byte;
 	}
 	else if (addr == 0xFF0F) {
-		gb->cpu.interrupt_flag = byte;
+		gb->cpu.interrupt_flag = byte | 0b11100000;
 	}
 	else if (addr == 0xFF10) {
 		gb->apu.NR10 = byte;
