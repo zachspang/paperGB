@@ -3,10 +3,10 @@
 
 Timer::Timer(GB* in_gb) :
 	gb(in_gb) {
-	DIV = 0;
+	DIV = 0xAB;
 	TIMA = 0;
 	TMA = 0;
-	TAC = 0;
+	TAC = 0xF8;
 	div_cycle_counter = 0;
 	tima_cycle_counter = 0;
 }
