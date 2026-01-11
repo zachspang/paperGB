@@ -63,7 +63,7 @@ void CPU::tick() {
             interrupt_addr = 0x58;
         }
         else if ((interrupt_enable & interrupt_flag & 0b10000) != 0) {
-            interrupt_flag &= 0b011111111;
+            interrupt_flag &= 0b11111111;
             interrupt_addr = 0x60;
         }
 
