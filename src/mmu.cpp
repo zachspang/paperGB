@@ -23,7 +23,7 @@ uint8_t MMU::read_no_tick(uint16_t addr) {
 		return gb->ppu.read_VRAM(addr);
 	}
 	else if (addr >= 0xA000 && addr <= 0xBFFF) {
-		return gb->cart.read_RAM(addr - 0xA000);
+		return gb->cart.read_RAM(addr);
 	}
 	else if (addr >= 0xC000 && addr <= 0xCFFF) {
 		return WRAM1[addr - 0xC000];
@@ -170,7 +170,7 @@ uint8_t MMU::read_no_tick(uint16_t addr) {
 	}
 	else {
 		//Unmapped addresss
-		LOG_WARN("Invalid read at addr: 0x%X", addr);
+		//LOG_WARN("Invalid read at addr: 0x%X", addr);
 		return 0xFF;
 	}
 }
@@ -185,7 +185,7 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 		gb->ppu.write_VRAM(addr, byte);
 	}
 	else if (addr >= 0xA000 && addr <= 0xBFFF) {
-		gb->cart.write_RAM(addr - 0xA000, byte);
+		gb->cart.write_RAM(addr, byte);
 	}
 	else if (addr >= 0xC000 && addr <= 0xCFFF) {
 		WRAM1[addr - 0xC000] = byte;
@@ -338,6 +338,6 @@ void MMU::write(uint16_t addr, uint8_t byte) {
 	}
 	else {
 		//Unmapped address
-		LOG_WARN("Write to unmapped address, %X", addr);
+		//LOG_WARN("Write to unmapped address, %X", addr);
 	}
 }

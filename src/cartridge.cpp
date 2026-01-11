@@ -339,7 +339,7 @@ void Cartridge::write_ROM(uint16_t addr, uint8_t byte) {
 }
 
 uint8_t Cartridge::read_RAM(uint16_t addr) {
-	if (addr < ram_size) {
+	if (addr - 0xA000 < ram_size) {
 		if (RAM_enabled) {
 			if (mbc_num == 3 && ram_bank_num > 0x7) {
 				LOG_WARN("Attempted read from unimplemented RTC registers, read 0x00 instead");
@@ -354,7 +354,7 @@ uint8_t Cartridge::read_RAM(uint16_t addr) {
 }
 
 void Cartridge::write_RAM(uint16_t addr, uint8_t byte) {
-	if (addr < ram_size) {
+	if (RAM_enabled && addr - 0xA000 < ram_size) {
 		RAM[get_ram_addr(addr)] = byte;
 	}
 	else {
