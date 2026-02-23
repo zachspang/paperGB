@@ -361,5 +361,11 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
 /roms
 /paperGB_Tests/blank.sav
+/3d/*
+!/3d/3dmain.cpp
+!/3d/fs_mesh.sc
+!/3d/vs_mesh.sc
+!/3d/varying.def.sc

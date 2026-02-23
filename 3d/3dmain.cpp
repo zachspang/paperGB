@@ -66,28 +66,83 @@ struct MeshInstance
 };
 
 // ------------------------------------------------------------
-// Helper: get node transform
+// Helper: get node local transform
 // ------------------------------------------------------------
 void getNodeMatrix(const tinygltf::Node& node, float out[16])
 {
+    bx::mtxIdentity(out);
+
+    // Translation
+    if (!node.translation.empty())
+    {
+        bx::mtxTranslate(out,
+            static_cast<float>(node.translation[0]),
+            static_cast<float>(node.translation[1]),
+            static_cast<float>(node.translation[2])
+        );
+    }
+
+    // Rotation (quaternion)
+    if (!node.rotation.empty())
+    {
+        float qx = static_cast<float>(node.rotation[0]);
+        float qy = static_cast<float>(node.rotation[1]);
+        float qz = static_cast<float>(node.rotation[2]);
+        float qw = static_cast<float>(node.rotation[3]);
+
+        bx::Quaternion quat(qx, qy, qz, qw);
+
+        float rot[16];
+        bx::mtxFromQuaternion(rot, quat);
+
+        float tmp[16];
+        bx::mtxMul(tmp, out, rot);
+        memcpy(out, tmp, sizeof(tmp));
+    }
+
+    // Scale
+    if (!node.scale.empty())
+    {
+        float scale[16];
+        bx::mtxScale(scale,
+            static_cast<float>(node.scale[0]),
+            static_cast<float>(node.scale[1]),
+            static_cast<float>(node.scale[2])
+        );
+        float tmp[16];
+        bx::mtxMul(tmp, out, scale);
+        memcpy(out, tmp, sizeof(tmp));
+    }
+
+    // Override if node has a 4x4 matrix
     if (!node.matrix.empty())
     {
         for (int i = 0; i < 16; ++i) out[i] = static_cast<float>(node.matrix[i]);
     }
+}
+
+// ------------------------------------------------------------
+// Helper: get global node transform (includes parent hierarchy)
+// ------------------------------------------------------------
+void getGlobalNodeMatrix(const tinygltf::Model& model,
+    const std::vector<int>& nodeParents,
+    int nodeIndex,
+    float out[16])
+{
+    const auto& node = model.nodes[nodeIndex];
+    float local[16];
+    getNodeMatrix(node, local);
+
+    int parentIdx = nodeParents[nodeIndex];
+    if (parentIdx >= 0)
+    {
+        float parentMtx[16];
+        getGlobalNodeMatrix(model, nodeParents, parentIdx, parentMtx);
+        bx::mtxMul(out, parentMtx, local);
+    }
     else
     {
-        bx::mtxIdentity(out);
-
-        if (!node.translation.empty())
-        {
-            bx::mtxTranslate(out,
-                static_cast<float>(node.translation[0]),
-                static_cast<float>(node.translation[1]),
-                static_cast<float>(node.translation[2])
-            );
-        }
-
-        // Optional: handle rotation & scale if needed
+        memcpy(out, local, sizeof(local));
     }
 }
 
@@ -156,6 +211,17 @@ int main(int argc, char* argv[])
     {
         std::cout << "Failed to load .glb\n";
         return 1;
+    }
+
+    // ------------------------------------------------------------
+    // Build node parent relationships
+    // ------------------------------------------------------------
+    std::vector<int> nodeParents(gltfModel.nodes.size(), -1);
+    for (size_t i = 0; i < gltfModel.nodes.size(); ++i)
+    {
+        const auto& node = gltfModel.nodes[i];
+        for (int childIdx : node.children)
+            nodeParents[childIdx] = int(i);
     }
 
     // ------------------------------------------------------------
@@ -278,6 +344,7 @@ int main(int argc, char* argv[])
     bool running = true;
     float angle = 0.0f;
     float cameraDistance = 150.0f;
+    float modelScaleFactor = 300.0f; // Scale the whole model
 
     while (running)
     {
@@ -288,32 +355,46 @@ int main(int argc, char* argv[])
                 running = false;
         }
 
+        // Increment angle for camera orbit
         angle += 0.01f;
 
+        // Compute camera position in circular orbit
+        float camX = sinf(angle) * cameraDistance;
+        float camZ = cosf(angle) * cameraDistance;
+        float camY = 50.0f; // Optional height offset
+
+        // Build view and projection matrices
         float view[16];
         float proj[16];
-
-        bx::mtxLookAt(view, { 0.0f, 0.0f, cameraDistance }, { 0.0f, 0.0f, 0.0f });
+        bx::mtxLookAt(view, { camX, camY, camZ }, { 0.0f, 0.0f, 0.0f });
         bx::mtxProj(proj, 60.0f, 1280.0f / 720.0f, 0.1f, 1000.0f, bgfx::getCaps()->homogeneousDepth);
 
         bgfx::setViewTransform(0, view, proj);
         bgfx::touch(0);
 
+        // Render all meshes
         for (const auto& meshInst : allMeshes)
         {
+            // Compute global node transform including hierarchy
             float nodeMtx[16];
-            getNodeMatrix(gltfModel.nodes[meshInst.nodeIndex], nodeMtx);
+            getGlobalNodeMatrix(gltfModel, nodeParents, meshInst.nodeIndex, nodeMtx);
 
-            float rotation[16];
-            bx::mtxRotateY(rotation, angle);
+            // Apply global scale directly to the matrix
+            float finalMtx[16];
+            memcpy(finalMtx, nodeMtx, sizeof(finalMtx));
+            for (int i = 0; i < 3; ++i)
+            {
+                finalMtx[i + 0] *= modelScaleFactor; // X row
+                finalMtx[i + 4] *= modelScaleFactor; // Y row
+                finalMtx[i + 8] *= modelScaleFactor; // Z row
+            }
 
-            float finalModel[16];
-            bx::mtxMul(finalModel, nodeMtx, rotation);
-
-            bgfx::setTransform(finalModel);
+            // Set transform and buffers
+            bgfx::setTransform(finalMtx);
             bgfx::setVertexBuffer(0, meshInst.buffers.vbh);
             bgfx::setIndexBuffer(meshInst.buffers.ibh);
 
+            // Render state
             bgfx::setState(
                 BGFX_STATE_WRITE_RGB |
                 BGFX_STATE_WRITE_Z |
@@ -324,6 +405,7 @@ int main(int argc, char* argv[])
             bgfx::submit(0, program);
         }
 
+        // Advance to next frame
         bgfx::frame();
     }
 
