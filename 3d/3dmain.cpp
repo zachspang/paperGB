@@ -379,7 +379,15 @@ int main(int argc, char* argv[])
             float nodeMtx[16];
             getGlobalNodeMatrix(gltfModel, nodeParents, meshInst.nodeIndex, nodeMtx);
 
-            bgfx::setTransform(nodeMtx);
+            // Mirror X to convert glTF right-handed to bgfx/OpenGL convention
+            float mirrorX[16];
+            bx::mtxIdentity(mirrorX);
+            mirrorX[0] = -1.0f; // negate X column
+
+            float finalMtx[16];
+            bx::mtxMul(finalMtx, nodeMtx, mirrorX);
+
+            bgfx::setTransform(finalMtx);
             bgfx::setVertexBuffer(0, meshInst.buffers.vbh);
             bgfx::setIndexBuffer(meshInst.buffers.ibh);
 
@@ -388,7 +396,7 @@ int main(int argc, char* argv[])
                 BGFX_STATE_WRITE_RGB |
                 BGFX_STATE_WRITE_Z |
                 BGFX_STATE_DEPTH_TEST_LESS |
-                BGFX_STATE_CULL_CCW                 
+                BGFX_STATE_CULL_CW                 
             );
 
             bgfx::submit(0, program);
