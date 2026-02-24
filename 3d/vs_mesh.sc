@@ -1,15 +1,11 @@
-$input a_position, a_normal
-$output v_normal
+$input a_position, a_normal, a_texcoord0
+$output v_normal, v_texcoord0
 
 #include <bgfx_shader.sh>
 
 void main()
 {
-    vec4 worldPos = u_model[0] * vec4(a_position, 1.0);
-    vec4 viewPos  = u_view * worldPos;
-
-    gl_Position = u_proj * viewPos;
-
-    vec3 n = (u_view * u_model[0] * vec4(a_normal, 0.0)).xyz;
-    v_normal = normalize(n);
+    gl_Position = mul(u_modelViewProj, vec4(a_position, 1.0));
+    v_normal    = a_normal;
+    v_texcoord0 = a_texcoord0;
 }

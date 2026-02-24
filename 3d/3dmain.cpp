@@ -18,6 +18,7 @@ shadercRelease.exe -f fs_mesh.sc -o fs_mesh.bin --type fragment --platform windo
 
 #include <fstream>
 #include <iostream>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -34,7 +35,7 @@ static constexpr float CAMERA_FOV_DEG = 60.0f;
 static constexpr float CAMERA_NEAR = 0.1f;
 static constexpr float CAMERA_FAR = 1000.0f;
 
-static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb4.glb";
+static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb5.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
 
@@ -67,6 +68,7 @@ struct Vertex
 {
     float x, y, z;
     float nx, ny, nz;
+    float u, v;
 };
 
 struct MeshBuffers
@@ -75,6 +77,7 @@ struct MeshBuffers
     bgfx::IndexBufferHandle ibh;
     uint32_t indexCount;
     bool use32;
+    bgfx::TextureHandle texture;
 };
 
 struct MeshInstance
@@ -166,6 +169,40 @@ void getGlobalNodeMatrix(const tinygltf::Model& model,
 }
 
 // ------------------------------------------------------------
+// Helper: upload a glTF image to bgfx
+// ------------------------------------------------------------
+bgfx::TextureHandle uploadGltfImage(const tinygltf::Model& model, int imageIndex)
+{
+    if (imageIndex < 0 || imageIndex >= (int)model.images.size())
+        return BGFX_INVALID_HANDLE;
+
+    const tinygltf::Image& img = model.images[imageIndex];
+
+    if (img.image.empty())
+    {
+        std::cerr << "Image " << imageIndex << " has no pixel data." << std::endl;
+        return BGFX_INVALID_HANDLE;
+    }
+
+    bgfx::TextureFormat::Enum fmt = (img.component == 3)
+        ? bgfx::TextureFormat::RGB8
+        : bgfx::TextureFormat::RGBA8;
+
+    uint32_t dataSize = img.width * img.height * img.component;
+    const bgfx::Memory* mem = bgfx::copy(img.image.data(), dataSize);
+
+    return bgfx::createTexture2D(
+        static_cast<uint16_t>(img.width),
+        static_cast<uint16_t>(img.height),
+        false,
+        1,
+        fmt,
+        BGFX_TEXTURE_NONE,
+        mem
+    );
+}
+
+// ------------------------------------------------------------
 int main(int argc, char* argv[])
 {
     // ------------------------------------------------------------
@@ -244,6 +281,32 @@ int main(int argc, char* argv[])
     }
 
     // ------------------------------------------------------------
+    // Upload all glTF images to bgfx (cache by image index)
+    // ------------------------------------------------------------
+    std::unordered_map<int, bgfx::TextureHandle> textureCache;
+    for (int i = 0; i < (int)gltfModel.textures.size(); ++i)
+    {
+        int imageIdx = gltfModel.textures[i].source;
+        if (textureCache.find(imageIdx) == textureCache.end())
+            textureCache[imageIdx] = uploadGltfImage(gltfModel, imageIdx);
+    }
+
+    auto getMaterialTexture = [&](int materialIndex) -> bgfx::TextureHandle
+        {
+            if (materialIndex < 0 || materialIndex >= (int)gltfModel.materials.size())
+                return BGFX_INVALID_HANDLE;
+            const auto& mat = gltfModel.materials[materialIndex];
+            int texIndex = mat.pbrMetallicRoughness.baseColorTexture.index;
+            if (texIndex < 0)
+                return BGFX_INVALID_HANDLE;
+            int imageIdx = gltfModel.textures[texIndex].source;
+            auto it = textureCache.find(imageIdx);
+            if (it == textureCache.end())
+                return BGFX_INVALID_HANDLE;
+            return it->second;
+        };
+
+    // ------------------------------------------------------------
     // Build node parent relationships
     // ------------------------------------------------------------
     std::vector<int> nodeParents(gltfModel.nodes.size(), -1);
@@ -280,6 +343,8 @@ int main(int argc, char* argv[])
     bgfx::ShaderHandle fsh = loadShader(FS_BIN_PATH, fsBuffer);
     bgfx::ProgramHandle program = bgfx::createProgram(vsh, fsh, true);
 
+    bgfx::UniformHandle s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
+
     // ------------------------------------------------------------
     // PREPARE BUFFERS FOR ALL MESHES
     // ------------------------------------------------------------
@@ -290,6 +355,7 @@ int main(int argc, char* argv[])
     layout.begin()
         .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
         .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
         .end();
 
     for (size_t nodeIdx = 0; nodeIdx < gltfModel.nodes.size(); ++nodeIdx)
@@ -329,6 +395,19 @@ int main(int argc, char* argv[])
             const uint8_t* normBase = normBuffer.data.data() + normView.byteOffset + normAccessor.byteOffset;
             size_t normStride = normView.byteStride;
             if (normStride == 0) normStride = sizeof(float) * 3;
+
+            // TEXCOORD_0 (optional)
+            const uint8_t* uvBase = nullptr;
+            size_t uvStride = sizeof(float) * 2;
+            auto uvIt = primitive.attributes.find("TEXCOORD_0");
+            if (uvIt != primitive.attributes.end())
+            {
+                const auto& uvAccessor = gltfModel.accessors.at(uvIt->second);
+                const auto& uvView = gltfModel.bufferViews[uvAccessor.bufferView];
+                const auto& uvBuffer = gltfModel.buffers[uvView.buffer];
+                uvBase = uvBuffer.data.data() + uvView.byteOffset + uvAccessor.byteOffset;
+                uvStride = uvView.byteStride ? uvView.byteStride : sizeof(float) * 2;
+            }
 
             uint32_t vertexCount = posAccessor.count;
 
@@ -374,6 +453,18 @@ int main(int argc, char* argv[])
                 vertices[i].nx = n[0];
                 vertices[i].ny = n[1];
                 vertices[i].nz = n[2];
+
+                if (uvBase)
+                {
+                    const float* uv = reinterpret_cast<const float*>(uvBase + uvStride * i);
+                    vertices[i].u = uv[0];
+                    vertices[i].v = uv[1];
+                }
+                else
+                {
+                    vertices[i].u = 0.0f;
+                    vertices[i].v = 0.0f;
+                }
             }
 
             bgfx::VertexBufferHandle vbh = bgfx::createVertexBuffer(
@@ -396,7 +487,9 @@ int main(int argc, char* argv[])
                 );
             }
 
-            MeshBuffers buf = { vbh, ibh, (uint32_t)indexAccessor.count, use32 };
+            bgfx::TextureHandle tex = getMaterialTexture(primitive.material);
+
+            MeshBuffers buf = { vbh, ibh, (uint32_t)indexAccessor.count, use32, tex };
             allMeshes.push_back({ buf, static_cast<int>(nodeIdx) });
         }
     }
@@ -437,7 +530,7 @@ int main(int argc, char* argv[])
         for (const auto& meshInst : allMeshes)
         {
             // Compute global node transform including hierarchy
-            float nodeMtx[16]; 
+            float nodeMtx[16];
             getGlobalNodeMatrix(gltfModel, nodeParents, sceneRoots, meshInst.nodeIndex, nodeMtx);
 
             // Mirror X to convert glTF right-handed to bgfx/OpenGL convention
@@ -451,6 +544,10 @@ int main(int argc, char* argv[])
             bgfx::setTransform(finalMtx);
             bgfx::setVertexBuffer(0, meshInst.buffers.vbh);
             bgfx::setIndexBuffer(meshInst.buffers.ibh);
+
+            // Bind texture if available
+            if (bgfx::isValid(meshInst.buffers.texture))
+                bgfx::setTexture(0, s_texColor, meshInst.buffers.texture);
 
             // Render state
             bgfx::setState(
@@ -473,6 +570,11 @@ int main(int argc, char* argv[])
         bgfx::destroy(meshInst.buffers.ibh);
     }
 
+    for (auto& [idx, tex] : textureCache)
+        if (bgfx::isValid(tex))
+            bgfx::destroy(tex);
+
+    bgfx::destroy(s_texColor);
     bgfx::destroy(program);
     bgfx::shutdown();
 
