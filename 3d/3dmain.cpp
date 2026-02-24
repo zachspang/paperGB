@@ -18,6 +18,7 @@ shadercRelease.exe -f fs_mesh.sc -o fs_mesh.bin --type fragment --platform windo
 
 #include <fstream>
 #include <iostream>
+#include <unordered_set>
 #include <vector>
 
 // ------------------------------------------------------------
@@ -143,25 +144,27 @@ void getNodeMatrix(const tinygltf::Node& node, float out[16])
 // ------------------------------------------------------------
 void getGlobalNodeMatrix(const tinygltf::Model& model,
     const std::vector<int>& nodeParents,
+    const std::unordered_set<int>& sceneRoots,
     int nodeIndex,
     float out[16])
 {
     const auto& node = model.nodes[nodeIndex];
     float local[16];
     getNodeMatrix(node, local);
-
     int parentIdx = nodeParents[nodeIndex];
 
-    if (parentIdx >= 2)
+    // If this node is a scene root, or parent is a scene root, stop and use identity (skip wrapper transforms)
+    if (sceneRoots.find(nodeIndex) != sceneRoots.end() ||
+        parentIdx == -1 ||
+        sceneRoots.find(parentIdx) != sceneRoots.end())
     {
-        float parentMtx[16];
-        getGlobalNodeMatrix(model, nodeParents, parentIdx, parentMtx);
-        bx::mtxMul(out, local, parentMtx);
+        bx::mtxIdentity(out);  // skip this node's transform entirely
+        return;
     }
-    else
-    {
-        memcpy(out, local, sizeof(local));
-    }
+
+    float parentMtx[16];
+    getGlobalNodeMatrix(model, nodeParents, sceneRoots, parentIdx, parentMtx);
+    bx::mtxMul(out, local, parentMtx);
 }
 
 // ------------------------------------------------------------
@@ -251,6 +254,23 @@ int main(int argc, char* argv[])
         const auto& node = gltfModel.nodes[i];
         for (int childIdx : node.children)
             nodeParents[childIdx] = int(i);
+    }
+
+    std::unordered_set<int> sceneRoots;
+
+    if (!gltfModel.scenes.empty())
+    {
+        int sceneIndex = gltfModel.defaultScene >= 0 ? gltfModel.defaultScene : 0;
+        for (int rootNode : gltfModel.scenes[sceneIndex].nodes)
+            sceneRoots.insert(rootNode);
+    }
+
+    // If no scene roots found, fall back to nodes with no parent
+    if (sceneRoots.empty())
+    {
+        for (size_t i = 0; i < gltfModel.nodes.size(); ++i)
+            if (nodeParents[i] == -1)
+                sceneRoots.insert(int(i));
     }
 
     // ------------------------------------------------------------
@@ -419,8 +439,8 @@ int main(int argc, char* argv[])
         for (const auto& meshInst : allMeshes)
         {
             // Compute global node transform including hierarchy
-            float nodeMtx[16];
-            getGlobalNodeMatrix(gltfModel, nodeParents, meshInst.nodeIndex, nodeMtx);
+            float nodeMtx[16]; 
+            getGlobalNodeMatrix(gltfModel, nodeParents, sceneRoots, meshInst.nodeIndex, nodeMtx);
 
             // Mirror X to convert glTF right-handed to bgfx/OpenGL convention
             float mirrorX[16];
