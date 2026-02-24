@@ -134,11 +134,12 @@ void getGlobalNodeMatrix(const tinygltf::Model& model,
     getNodeMatrix(node, local);
 
     int parentIdx = nodeParents[nodeIndex];
-    if (parentIdx >= 0)
+
+    if (parentIdx >= 2)
     {
         float parentMtx[16];
         getGlobalNodeMatrix(model, nodeParents, parentIdx, parentMtx);
-        bx::mtxMul(out, parentMtx, local);
+        bx::mtxMul(out, local, parentMtx); 
     }
     else
     {
@@ -299,12 +300,12 @@ int main(int argc, char* argv[])
                 const float* pos = reinterpret_cast<const float*>(posBase + posStride * i);
                 vertices[i].x = pos[0];
                 vertices[i].y = pos[1];
-                vertices[i].z = -pos[2];
+                vertices[i].z = pos[2];
 
                 const float* n = reinterpret_cast<const float*>(normBase + normStride * i);
                 vertices[i].nx = n[0];
                 vertices[i].ny = n[1];
-                vertices[i].nz = -n[2];
+                vertices[i].nz = n[2];
             }
 
             bgfx::VertexLayout layout;
@@ -344,7 +345,6 @@ int main(int argc, char* argv[])
     bool running = true;
     float angle = 0.0f;
     float cameraDistance = 150.0f;
-    float modelScaleFactor = 300.0f; // Scale the whole model
 
     while (running)
     {
@@ -379,18 +379,7 @@ int main(int argc, char* argv[])
             float nodeMtx[16];
             getGlobalNodeMatrix(gltfModel, nodeParents, meshInst.nodeIndex, nodeMtx);
 
-            // Apply global scale directly to the matrix
-            float finalMtx[16];
-            memcpy(finalMtx, nodeMtx, sizeof(finalMtx));
-            for (int i = 0; i < 3; ++i)
-            {
-                finalMtx[i + 0] *= modelScaleFactor; // X row
-                finalMtx[i + 4] *= modelScaleFactor; // Y row
-                finalMtx[i + 8] *= modelScaleFactor; // Z row
-            }
-
-            // Set transform and buffers
-            bgfx::setTransform(finalMtx);
+            bgfx::setTransform(nodeMtx);
             bgfx::setVertexBuffer(0, meshInst.buffers.vbh);
             bgfx::setIndexBuffer(meshInst.buffers.ibh);
 
@@ -399,7 +388,7 @@ int main(int argc, char* argv[])
                 BGFX_STATE_WRITE_RGB |
                 BGFX_STATE_WRITE_Z |
                 BGFX_STATE_DEPTH_TEST_LESS |
-                BGFX_STATE_CULL_CW
+                BGFX_STATE_CULL_CCW                 
             );
 
             bgfx::submit(0, program);
