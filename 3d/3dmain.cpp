@@ -2,6 +2,8 @@
 shader comp commands
 shadercRelease.exe -f vs_mesh.sc -o vs_mesh.bin --type vertex --platform windows --profile 120 -i .
 shadercRelease.exe -f fs_mesh.sc -o fs_mesh.bin --type fragment --platform windows --profile 120 -i .
+shadercRelease.exe -f vs_line.sc -o vs_line.bin --type vertex   --platform windows --profile 120 -i .
+shadercRelease.exe -f fs_line.sc -o fs_line.bin --type fragment --platform windows --profile 120 -i .
 */
 
 #include <bgfx/bgfx.h>
@@ -16,6 +18,7 @@ shadercRelease.exe -f fs_mesh.sc -o fs_mesh.bin --type fragment --platform windo
 #define TINYGLTF_IMPLEMENTATION
 #include <tinygltf-2.9.7/tiny_gltf.h>
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <unordered_map>
@@ -41,6 +44,8 @@ static constexpr float CAMERA_FAR = 1000.0f;
 static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb5.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
+static const char* VS_LINE_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_line.bin";
+static const char* FS_LINE_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_line.bin";
 
 // Names of meshes that respond to click-drag rotation
 static const std::unordered_set<std::string> DRAGGABLE_MESH_NAMES = {
@@ -90,6 +95,12 @@ struct Vertex
     float x, y, z;
     float nx, ny, nz;
     float u, v;
+};
+
+struct LineVertex
+{
+    float x, y, z;
+    uint32_t abgr;
 };
 
 // CPU-side triangle soup for ray testing
@@ -269,7 +280,7 @@ bool rayTriangleIntersect(
     if (v < 0.0f || u + v > 1.0f) return false;
 
     t = f * (edge1[0] * q[0] + edge1[1] * q[1] + edge1[2] * q[2]);
-    return t > -1.0f;
+    return t > -1e-4f;
 }
 
 // ------------------------------------------------------------
@@ -518,6 +529,26 @@ int main(int argc, char* argv[])
     bgfx::UniformHandle s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 
     // ------------------------------------------------------------
+    // LINE SHADER + LAYOUT for ray visualisation
+    // ------------------------------------------------------------
+    bgfx::VertexLayout lineLayout;
+    lineLayout.begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+        .end();
+
+    std::vector<char> vsLineBuffer, fsLineBuffer;
+    bgfx::ShaderHandle vshLine = loadShader(VS_LINE_BIN_PATH, vsLineBuffer);
+    bgfx::ShaderHandle fshLine = loadShader(FS_LINE_BIN_PATH, fsLineBuffer);
+    bgfx::ProgramHandle lineProgram = bgfx::createProgram(vshLine, fshLine, true);
+
+    // Persistent ray endpoints (world space, after mirrorX already accounted for)
+    float g_rayOrigin[3] = { 0.0f, 0.0f, 0.0f };
+    float g_rayEnd[3] = { 0.0f, 0.0f, 0.0f };
+    bool  g_hasRay = false;
+    bool  g_showRay = true; // DEBUG: toggle ray visualisation with R key
+
+    // ------------------------------------------------------------
     // PREPARE BUFFERS FOR ALL MESHES
     // ------------------------------------------------------------
     std::vector<MeshInstance> allMeshes;
@@ -740,28 +771,57 @@ int main(int argc, char* argv[])
             {
                 running = false;
             }
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_r)
+            {
+                g_showRay = !g_showRay;
+                std::cout << "Ray visualisation: " << (g_showRay ? "ON" : "OFF") << "\n";
+            }
             else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT)
             {
                 float invView[16];
                 bx::mtxInverse(invView, view);
 
-                float rayOrigin[3];
-                rayOrigin[0] = invView[12];
-                rayOrigin[1] = invView[13];
-                rayOrigin[2] = invView[14];
+                // Use the explicitly computed camera position as ray origin
+                float rayOrigin[3] = { camX, camY, camZ };
 
+                // Unproject two points at NDC z=-1 (near) and z=1 (far)
+                // using the full inverse-projection path so handedness is correct
                 float ndcX = (2.0f * e.button.x / currentWidth) - 1.0f;
                 float ndcY = 1.0f - (2.0f * e.button.y / currentHeight);
 
-                float rayView[3] = { ndcX / proj[0], ndcY / proj[5], -1.0f };
+                float invProj[16];
+                bx::mtxInverse(invProj, proj);
 
-                float rayDir[3];
-                rayDir[0] = invView[0] * rayView[0] + invView[4] * rayView[1] + invView[8] * rayView[2];
-                rayDir[1] = invView[1] * rayView[0] + invView[5] * rayView[1] + invView[9] * rayView[2];
-                rayDir[2] = invView[2] * rayView[0] + invView[6] * rayView[1] + invView[10] * rayView[2];
+                // Near point in clip space -> view space -> world space
+                float clipNear[3] = { ndcX, ndcY, -1.0f };
+                float clipFar[3] = { ndcX, ndcY,  1.0f };
+
+                float viewNear[3], viewFar[3];
+                transformPoint(invProj, clipNear, viewNear);
+                transformPoint(invProj, clipFar, viewFar);
+
+                float worldNear[3], worldFar[3];
+                transformPoint(invView, viewNear, worldNear);
+                transformPoint(invView, viewFar, worldFar);
+
+                float rayDir[3] =
+                {
+                    worldFar[0] - worldNear[0],
+                    worldFar[1] - worldNear[1],
+                    worldFar[2] - worldNear[2]
+                };
 
                 float len = sqrtf(rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2]);
                 if (len > 1e-9f) { rayDir[0] /= len; rayDir[1] /= len; rayDir[2] /= len; }
+
+                // Store ray for visualisation
+                g_rayOrigin[0] = rayOrigin[0] + rayDir[0] * 0.05f;
+                g_rayOrigin[1] = rayOrigin[1] + rayDir[1] * 0.05f;
+                g_rayOrigin[2] = rayOrigin[2] + rayDir[2] * 0.05f;
+                g_rayEnd[0] = rayOrigin[0] + rayDir[0] * 100.0f;
+                g_rayEnd[1] = rayOrigin[1] + rayDir[1] * 100.0f;
+                g_rayEnd[2] = rayOrigin[2] + rayDir[2] * 100.0f;
+                g_hasRay = true;
 
                 float bestT = std::numeric_limits<float>::max();
                 std::string bestMesh = "(none)";
@@ -784,7 +844,7 @@ int main(int argc, char* argv[])
                         float t;
                         if (rayTriangleIntersect(rayOrigin, rayDir, wp0, wp1, wp2, t))
                         {
-                            if (t < bestT)
+                            if (fabsf(t) < fabsf(bestT))
                             {
                                 bestT = t;
                                 bestMesh = mi.meshName;
@@ -793,7 +853,62 @@ int main(int argc, char* argv[])
                     }
                 }
 
-                if (DRAGGABLE_MESH_NAMES.count(bestMesh))
+                bool firstHitDraggable = DRAGGABLE_MESH_NAMES.count(bestMesh) > 0;
+
+                // --- DEBUG ---
+                if (g_showRay)
+                {
+                    std::cout << "=== CLICK at (" << e.button.x << ", " << e.button.y << ") ===\n";
+                    if (bestT < std::numeric_limits<float>::max())
+                    {
+                        std::cout << "  First hit mesh : \"" << bestMesh << "\" t=" << bestT << "\n";
+                        std::cout << "  Will drag      : " << (firstHitDraggable ? "YES" : "NO") << "\n";
+                    }
+                    else
+                    {
+                        std::cout << "  No triangles hit at all\n";
+                    }
+
+                    // Collect all per-mesh hits, sort by distance, then print with order
+                    struct HitResult { std::string name; float t; bool draggable; };
+                    std::vector<HitResult> allHits;
+
+                    for (const auto& mi : allMeshes)
+                    {
+                        const auto& cpu = mi.cpuMesh;
+                        float closestForMesh = std::numeric_limits<float>::max();
+                        size_t triCount = cpu.indices.size() / 3;
+                        for (size_t tri = 0; tri < triCount; ++tri)
+                        {
+                            uint32_t i0 = cpu.indices[tri * 3 + 0];
+                            uint32_t i1 = cpu.indices[tri * 3 + 1];
+                            uint32_t i2 = cpu.indices[tri * 3 + 2];
+                            float wp0[3], wp1[3], wp2[3];
+                            transformPoint(mirrorX, &cpu.positions[i0 * 3], wp0);
+                            transformPoint(mirrorX, &cpu.positions[i1 * 3], wp1);
+                            transformPoint(mirrorX, &cpu.positions[i2 * 3], wp2);
+                            float t;
+                            if (rayTriangleIntersect(rayOrigin, rayDir, wp0, wp1, wp2, t) && fabsf(t) < fabsf(closestForMesh))
+                                closestForMesh = t;
+                        }
+                        if (closestForMesh < std::numeric_limits<float>::max())
+                            allHits.push_back({ mi.meshName, closestForMesh, DRAGGABLE_MESH_NAMES.count(mi.meshName) > 0 });
+                    }
+
+                    std::sort(allHits.begin(), allHits.end(), [](const HitResult& a, const HitResult& b) {
+                        return fabsf(a.t) < fabsf(b.t);
+                        });
+
+                    for (size_t i = 0; i < allHits.size(); ++i)
+                    {
+                        const auto& h = allHits[i];
+                        std::cout << "  [" << (i + 1) << "] \"" << h.name << "\" t=" << h.t
+                            << (h.draggable ? " [DRAGGABLE]" : "") << "\n";
+                    }
+                }
+                // --- END DEBUG ---
+
+                if (firstHitDraggable)
                 {
                     isDragging = true;
                     lastMouseX = e.button.x;
@@ -852,6 +967,31 @@ int main(int argc, char* argv[])
             bgfx::submit(0, program);
         }
 
+        // Render pick ray for visualisation
+        if (g_hasRay && g_showRay)
+        {
+            LineVertex lineVerts[2] = {
+                { g_rayOrigin[0], g_rayOrigin[1], g_rayOrigin[2], 0xff0000ff }, // red = origin
+                { g_rayEnd[0],    g_rayEnd[1],    g_rayEnd[2],    0xff00ff00 }  // green = far end
+            };
+
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(&tvb, 2, lineLayout);
+            memcpy(tvb.data, lineVerts, sizeof(lineVerts));
+
+            float identity[16];
+            bx::mtxIdentity(identity);
+            bgfx::setTransform(identity);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(
+                BGFX_STATE_WRITE_RGB |
+                BGFX_STATE_WRITE_Z |
+                BGFX_STATE_DEPTH_TEST_LESS |
+                BGFX_STATE_PT_LINES
+            );
+            bgfx::submit(0, lineProgram);
+        }
+
         // Advance to next frame
         bgfx::frame();
     }
@@ -868,6 +1008,7 @@ int main(int argc, char* argv[])
 
     bgfx::destroy(s_texColor);
     bgfx::destroy(program);
+    bgfx::destroy(lineProgram);
     bgfx::shutdown();
 
     SDL_DestroyWindow(window);
