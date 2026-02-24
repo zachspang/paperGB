@@ -269,7 +269,7 @@ bool rayTriangleIntersect(
     if (v < 0.0f || u + v > 1.0f) return false;
 
     t = f * (edge1[0] * q[0] + edge1[1] * q[1] + edge1[2] * q[2]);
-    return t > EPSILON;
+    return t > -1.0f;
 }
 
 // ------------------------------------------------------------
@@ -723,6 +723,16 @@ int main(int argc, char* argv[])
     {
         SDL_GetWindowSize(window, &currentWidth, &currentHeight);
 
+        // Compute matrices BEFORE event polling so pick ray is always current
+        float camX = cosf(angleV) * sinf(angleH) * CAMERA_DISTANCE;
+        float camY = sinf(angleV) * CAMERA_DISTANCE;
+        float camZ = cosf(angleV) * cosf(angleH) * CAMERA_DISTANCE;
+
+        float view[16];
+        float proj[16];
+        bx::mtxLookAt(view, { camX, camY, camZ }, { 0.0f, 0.0f, 0.0f });
+        bx::mtxProj(proj, CAMERA_FOV_DEG, (float)currentWidth / (float)currentHeight, CAMERA_NEAR, CAMERA_FAR, bgfx::getCaps()->homogeneousDepth);
+
         SDL_Event e;
         while (SDL_PollEvent(&e))
         {
@@ -732,9 +742,63 @@ int main(int argc, char* argv[])
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT)
             {
-                isDragging = true;
-                lastMouseX = e.button.x;
-                lastMouseY = e.button.y;
+                float invView[16];
+                bx::mtxInverse(invView, view);
+
+                float rayOrigin[3];
+                rayOrigin[0] = invView[12];
+                rayOrigin[1] = invView[13];
+                rayOrigin[2] = invView[14];
+
+                float ndcX = (2.0f * e.button.x / currentWidth) - 1.0f;
+                float ndcY = 1.0f - (2.0f * e.button.y / currentHeight);
+
+                float rayView[3] = { ndcX / proj[0], ndcY / proj[5], -1.0f };
+
+                float rayDir[3];
+                rayDir[0] = invView[0] * rayView[0] + invView[4] * rayView[1] + invView[8] * rayView[2];
+                rayDir[1] = invView[1] * rayView[0] + invView[5] * rayView[1] + invView[9] * rayView[2];
+                rayDir[2] = invView[2] * rayView[0] + invView[6] * rayView[1] + invView[10] * rayView[2];
+
+                float len = sqrtf(rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2]);
+                if (len > 1e-9f) { rayDir[0] /= len; rayDir[1] /= len; rayDir[2] /= len; }
+
+                float bestT = std::numeric_limits<float>::max();
+                std::string bestMesh = "(none)";
+
+                for (const auto& mi : allMeshes)
+                {
+                    const auto& cpu = mi.cpuMesh;
+                    size_t triCount = cpu.indices.size() / 3;
+                    for (size_t tri = 0; tri < triCount; ++tri)
+                    {
+                        uint32_t i0 = cpu.indices[tri * 3 + 0];
+                        uint32_t i1 = cpu.indices[tri * 3 + 1];
+                        uint32_t i2 = cpu.indices[tri * 3 + 2];
+
+                        float wp0[3], wp1[3], wp2[3];
+                        transformPoint(mirrorX, &cpu.positions[i0 * 3], wp0);
+                        transformPoint(mirrorX, &cpu.positions[i1 * 3], wp1);
+                        transformPoint(mirrorX, &cpu.positions[i2 * 3], wp2);
+
+                        float t;
+                        if (rayTriangleIntersect(rayOrigin, rayDir, wp0, wp1, wp2, t))
+                        {
+                            if (t < bestT)
+                            {
+                                bestT = t;
+                                bestMesh = mi.meshName;
+                            }
+                        }
+                    }
+                }
+
+                if (DRAGGABLE_MESH_NAMES.count(bestMesh))
+                {
+                    isDragging = true;
+                    lastMouseX = e.button.x;
+                    lastMouseY = e.button.y;
+                }
             }
             else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT)
             {
@@ -754,16 +818,6 @@ int main(int argc, char* argv[])
                 }
             }
         }
-
-        float camX = cosf(angleV) * sinf(angleH) * CAMERA_DISTANCE;
-        float camY = sinf(angleV) * CAMERA_DISTANCE;
-        float camZ = cosf(angleV) * cosf(angleH) * CAMERA_DISTANCE;
-
-        // Build view and projection matrices
-        float view[16];
-        float proj[16];
-        bx::mtxLookAt(view, { camX, camY, camZ }, { 0.0f, 0.0f, 0.0f });
-        bx::mtxProj(proj, CAMERA_FOV_DEG, (float)currentWidth / (float)currentHeight, CAMERA_NEAR, CAMERA_FAR, bgfx::getCaps()->homogeneousDepth);
 
         bgfx::setViewRect(0, 0, 0, (uint16_t)currentWidth, (uint16_t)currentHeight);
         bgfx::setViewTransform(0, view, proj);
