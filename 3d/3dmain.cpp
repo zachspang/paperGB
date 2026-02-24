@@ -21,6 +21,9 @@ shadercRelease.exe -f fs_mesh.sc -o fs_mesh.bin --type fragment --platform windo
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <string>
+#include <limits>
+#include <cmath>
 
 // ------------------------------------------------------------
 // Constants
@@ -38,6 +41,24 @@ static constexpr float CAMERA_FAR = 1000.0f;
 static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb5.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
+
+// Names of meshes that respond to click-drag rotation
+static const std::unordered_set<std::string> DRAGGABLE_MESH_NAMES = {
+    "base_low_Main_0",
+    "battery_low_External_0",
+    "backvent_low_External_0",
+    "Cylinder010_External_0",
+    "dviBox_low_External_0",
+    "dviMetal_low_External_0",
+    "dviPart_low_External_0",
+    "dviSmall_low_External_0",
+    "lock_low_External_0",
+    "lockOpen_low_External_0",
+    "Plane009_Black Screen_0",
+    "screen_low_External_0",
+    "screenHolder_low_External_0",
+    "volumeBox_low_External_0"
+};
 
 // ------------------------------------------------------------
 // Helper: load compiled bgfx shader
@@ -71,6 +92,13 @@ struct Vertex
     float u, v;
 };
 
+// CPU-side triangle soup for ray testing
+struct CpuMesh
+{
+    std::vector<float> positions; // flat: x0,y0,z0, x1,y1,z1, ...
+    std::vector<uint32_t> indices;// always 32-bit for simplicity
+};
+
 struct MeshBuffers
 {
     bgfx::VertexBufferHandle vbh;
@@ -84,6 +112,8 @@ struct MeshInstance
 {
     MeshBuffers buffers;
     int nodeIndex; // reference to gltf node
+    std::string meshName; // name of the parent gltf mesh
+    CpuMesh cpuMesh; // world-space triangles for picking
 };
 
 // ------------------------------------------------------------
@@ -200,6 +230,148 @@ bgfx::TextureHandle uploadGltfImage(const tinygltf::Model& model, int imageIndex
         BGFX_TEXTURE_NONE,
         mem
     );
+}
+
+// ------------------------------------------------------------
+// Ray-triangle intersection (Möller–Trumbore)
+// Returns true and sets t if hit (front-face only).
+// ------------------------------------------------------------
+bool rayTriangleIntersect(
+    const float orig[3], const float dir[3],
+    const float v0[3], const float v1[3], const float v2[3],
+    float& t)
+{
+    const float EPSILON = 1e-7f;
+    float edge1[3] = { v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2] };
+    float edge2[3] = { v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2] };
+
+    // h = dir x edge2
+    float h[3] = {
+        dir[1] * edge2[2] - dir[2] * edge2[1],
+        dir[2] * edge2[0] - dir[0] * edge2[2],
+        dir[0] * edge2[1] - dir[1] * edge2[0]
+    };
+
+    float a = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2];
+    if (fabsf(a) < EPSILON) return false;
+
+    float f = 1.0f / a;
+    float s[3] = { orig[0] - v0[0], orig[1] - v0[1], orig[2] - v0[2] };
+    float u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
+    if (u < 0.0f || u > 1.0f) return false;
+
+    float q[3] = {
+        s[1] * edge1[2] - s[2] * edge1[1],
+        s[2] * edge1[0] - s[0] * edge1[2],
+        s[0] * edge1[1] - s[1] * edge1[0]
+    };
+    float v = f * (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]);
+    if (v < 0.0f || u + v > 1.0f) return false;
+
+    t = f * (edge1[0] * q[0] + edge1[1] * q[1] + edge1[2] * q[2]);
+    return t > EPSILON;
+}
+
+// ------------------------------------------------------------
+// Transform a point by a 4x4 column-major matrix
+// ------------------------------------------------------------
+void transformPoint(const float m[16], const float in[3], float out[3])
+{
+    float w = m[3] * in[0] + m[7] * in[1] + m[11] * in[2] + m[15];
+    if (fabsf(w) < 1e-9f) w = 1.0f;
+    out[0] = (m[0] * in[0] + m[4] * in[1] + m[8] * in[2] + m[12]) / w;
+    out[1] = (m[1] * in[0] + m[5] * in[1] + m[9] * in[2] + m[13]) / w;
+    out[2] = (m[2] * in[0] + m[6] * in[1] + m[10] * in[2] + m[14]) / w;
+}
+
+// ------------------------------------------------------------
+// Build a pick ray from screen coords using view/proj matrices
+// ------------------------------------------------------------
+void buildPickRay(int mx, int my, int width, int height,
+    const float view[16], const float proj[16],
+    float rayOrigin[3], float rayDir[3])
+{
+    // NDC [-1,1]
+    float ndcX = (2.0f * mx / width) - 1.0f;
+    float ndcY = 1.0f - (2.0f * my / height);
+
+    // Inverse projection to view space
+    float invProj[16];
+    bx::mtxInverse(invProj, proj);
+
+    float clipNear[3] = { ndcX, ndcY, -1.0f };
+    float clipFar[3] = { ndcX, ndcY,  1.0f };
+
+    float viewNear[3], viewFar[3];
+    transformPoint(invProj, clipNear, viewNear);
+    transformPoint(invProj, clipFar, viewFar);
+
+    // Inverse view to world space
+    float invView[16];
+    bx::mtxInverse(invView, view);
+
+    float worldNear[3], worldFar[3];
+    transformPoint(invView, viewNear, worldNear);
+    transformPoint(invView, viewFar, worldFar);
+
+    rayOrigin[0] = worldNear[0];
+    rayOrigin[1] = worldNear[1];
+    rayOrigin[2] = worldNear[2];
+
+    float dx = worldFar[0] - worldNear[0];
+    float dy = worldFar[1] - worldNear[1];
+    float dz = worldFar[2] - worldNear[2];
+    float len = sqrtf(dx * dx + dy * dy + dz * dz);
+    if (len > 1e-9f) { dx /= len; dy /= len; dz /= len; }
+
+    rayDir[0] = dx;
+    rayDir[1] = dy;
+    rayDir[2] = dz;
+}
+
+// ------------------------------------------------------------
+// Test ray against all draggable mesh instances.
+// Returns true if any named mesh was hit.
+// ------------------------------------------------------------
+bool rayHitsDraggableMesh(const std::vector<MeshInstance>& allMeshes,
+    const float rayOrigin[3], const float rayDir[3],
+    const float mirrorX[16])
+{
+    float bestT = std::numeric_limits<float>::max();
+
+    for (const auto& mi : allMeshes)
+    {
+        if (DRAGGABLE_MESH_NAMES.find(mi.meshName) == DRAGGABLE_MESH_NAMES.end())
+            continue;
+
+        const auto& cpu = mi.cpuMesh;
+        size_t triCount = cpu.indices.size() / 3;
+        for (size_t tri = 0; tri < triCount; ++tri)
+        {
+            uint32_t i0 = cpu.indices[tri * 3 + 0];
+            uint32_t i1 = cpu.indices[tri * 3 + 1];
+            uint32_t i2 = cpu.indices[tri * 3 + 2];
+
+            // World-space positions already stored in cpuMesh,
+            // but we still need the mirrorX applied (same as render path)
+            float wp0[3], wp1[3], wp2[3];
+            const float* p0 = &cpu.positions[i0 * 3];
+            const float* p1 = &cpu.positions[i1 * 3];
+            const float* p2 = &cpu.positions[i2 * 3];
+            transformPoint(mirrorX, p0, wp0);
+            transformPoint(mirrorX, p1, wp1);
+            transformPoint(mirrorX, p2, wp2);
+
+            float t;
+            if (rayTriangleIntersect(rayOrigin, rayDir, wp0, wp1, wp2, t))
+            {
+                if (t < bestT)
+                    bestT = t;
+            }
+        }
+    }
+
+    return bestT < std::numeric_limits<float>::max();
 }
 
 // ------------------------------------------------------------
@@ -364,6 +536,8 @@ int main(int argc, char* argv[])
         if (node.mesh < 0) continue;
 
         const auto& mesh = gltfModel.meshes[node.mesh];
+        const std::string& meshName = mesh.name;
+
         for (const auto& primitive : mesh.primitives)
         {
             // Guard against missing POSITION attribute
@@ -489,40 +663,109 @@ int main(int argc, char* argv[])
 
             bgfx::TextureHandle tex = getMaterialTexture(primitive.material);
 
+            // ----------------------------------------------------------
+            // Build CPU-side mesh for ray testing.
+            // Store node-space positions; mirrorX will be applied at pick time.
+            // ----------------------------------------------------------
+            CpuMesh cpuMesh;
+
+            // Get the node's global transform to put verts into world space
+            float nodeMtx[16];
+            getGlobalNodeMatrix(gltfModel, nodeParents, sceneRoots, nodeIdx, nodeMtx);
+
+            cpuMesh.positions.resize(vertexCount * 3);
+            for (uint32_t i = 0; i < vertexCount; ++i)
+            {
+                const float* lp = reinterpret_cast<const float*>(posBase + posStride * i);
+                float worldPos[3];
+                transformPoint(nodeMtx, lp, worldPos);
+                cpuMesh.positions[i * 3 + 0] = worldPos[0];
+                cpuMesh.positions[i * 3 + 1] = worldPos[1];
+                cpuMesh.positions[i * 3 + 2] = worldPos[2];
+            }
+
+            if (use32)
+            {
+                cpuMesh.indices.assign(indices32.begin(), indices32.end());
+            }
+            else
+            {
+                cpuMesh.indices.resize(indices16.size());
+                for (size_t ii = 0; ii < indices16.size(); ++ii)
+                    cpuMesh.indices[ii] = indices16[ii];
+            }
+
             MeshBuffers buf = { vbh, ibh, (uint32_t)indexAccessor.count, use32, tex };
-            allMeshes.push_back({ buf, static_cast<int>(nodeIdx) });
+            allMeshes.push_back({ buf, static_cast<int>(nodeIdx), meshName, std::move(cpuMesh) });
         }
     }
+
+    // mirrorX matrix (same as render path) — constant, build once
+    float mirrorX[16];
+    bx::mtxIdentity(mirrorX);
+    mirrorX[0] = -1.0f;
 
     // ------------------------------------------------------------
     // MAIN LOOP
     // ------------------------------------------------------------
     bool running = true;
-    float angle = 0.0f;
+    float angleH = 0.0f;
+    float angleV = 0.0f;
+
+    bool isDragging = false;
+    int lastMouseX = 0;
+    int lastMouseY = 0;
+
+    int currentWidth = WINDOW_WIDTH;
+    int currentHeight = WINDOW_HEIGHT;
 
     while (running)
     {
+        SDL_GetWindowSize(window, &currentWidth, &currentHeight);
+
         SDL_Event e;
         while (SDL_PollEvent(&e))
         {
             if (e.type == SDL_QUIT)
+            {
                 running = false;
+            }
+            else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT)
+            {
+                isDragging = true;
+                lastMouseX = e.button.x;
+                lastMouseY = e.button.y;
+            }
+            else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT)
+            {
+                isDragging = false;
+            }
+            else if (e.type == SDL_MOUSEMOTION)
+            {
+                if (isDragging)
+                {
+                    int dx = e.motion.x - lastMouseX;
+                    int dy = e.motion.y - lastMouseY;
+                    angleH += dx * CAMERA_ORBIT_SPEED;
+                    angleV += dy * CAMERA_ORBIT_SPEED;
+                    angleV = bx::clamp(angleV, -bx::kPiHalf + 0.01f, bx::kPiHalf - 0.01f);
+                    lastMouseX = e.motion.x;
+                    lastMouseY = e.motion.y;
+                }
+            }
         }
 
-        // Increment angle for camera orbit
-        angle += CAMERA_ORBIT_SPEED;
-
-        // Compute camera position in circular orbit
-        float camX = sinf(angle) * CAMERA_DISTANCE;
-        float camZ = cosf(angle) * CAMERA_DISTANCE;
-        float camY = CAMERA_HEIGHT;
+        float camX = cosf(angleV) * sinf(angleH) * CAMERA_DISTANCE;
+        float camY = sinf(angleV) * CAMERA_DISTANCE;
+        float camZ = cosf(angleV) * cosf(angleH) * CAMERA_DISTANCE;
 
         // Build view and projection matrices
         float view[16];
         float proj[16];
         bx::mtxLookAt(view, { camX, camY, camZ }, { 0.0f, 0.0f, 0.0f });
-        bx::mtxProj(proj, CAMERA_FOV_DEG, (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, CAMERA_NEAR, CAMERA_FAR, bgfx::getCaps()->homogeneousDepth);
+        bx::mtxProj(proj, CAMERA_FOV_DEG, (float)currentWidth / (float)currentHeight, CAMERA_NEAR, CAMERA_FAR, bgfx::getCaps()->homogeneousDepth);
 
+        bgfx::setViewRect(0, 0, 0, (uint16_t)currentWidth, (uint16_t)currentHeight);
         bgfx::setViewTransform(0, view, proj);
         bgfx::touch(0);
 
@@ -532,11 +775,6 @@ int main(int argc, char* argv[])
             // Compute global node transform including hierarchy
             float nodeMtx[16];
             getGlobalNodeMatrix(gltfModel, nodeParents, sceneRoots, meshInst.nodeIndex, nodeMtx);
-
-            // Mirror X to convert glTF right-handed to bgfx/OpenGL convention
-            float mirrorX[16];
-            bx::mtxIdentity(mirrorX);
-            mirrorX[0] = -1.0f; // negate X column
 
             float finalMtx[16];
             bx::mtxMul(finalMtx, nodeMtx, mirrorX);
