@@ -16,9 +16,26 @@ shadercRelease.exe -f fs_mesh.sc -o fs_mesh.bin --type fragment --platform windo
 #define TINYGLTF_IMPLEMENTATION
 #include <tinygltf-2.9.7/tiny_gltf.h>
 
-#include <vector>
-#include <iostream>
 #include <fstream>
+#include <iostream>
+#include <vector>
+
+// ------------------------------------------------------------
+// Constants
+// ------------------------------------------------------------
+
+static constexpr int   WINDOW_WIDTH = 1280;
+static constexpr int   WINDOW_HEIGHT = 720;
+static constexpr float CAMERA_DISTANCE = 150.0f;
+static constexpr float CAMERA_HEIGHT = 50.0f;
+static constexpr float CAMERA_ORBIT_SPEED = 0.01f;
+static constexpr float CAMERA_FOV_DEG = 60.0f;
+static constexpr float CAMERA_NEAR = 0.1f;
+static constexpr float CAMERA_FAR = 1000.0f;
+
+static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb.glb";
+static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
+static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
 
 // ------------------------------------------------------------
 // Helper: load compiled bgfx shader
@@ -139,7 +156,7 @@ void getGlobalNodeMatrix(const tinygltf::Model& model,
     {
         float parentMtx[16];
         getGlobalNodeMatrix(model, nodeParents, parentIdx, parentMtx);
-        bx::mtxMul(out, local, parentMtx); 
+        bx::mtxMul(out, local, parentMtx);
     }
     else
     {
@@ -153,24 +170,35 @@ int main(int argc, char* argv[])
     // ------------------------------------------------------------
     // SDL INIT
     // ------------------------------------------------------------
-    SDL_Init(SDL_INIT_VIDEO);
+    if (SDL_Init(SDL_INIT_VIDEO) != 0)
+    {
+        std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
+        return 1;
+    }
 
     SDL_Window* window = SDL_CreateWindow(
         "GLB Viewer",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        1280,
-        720,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
+
+    if (!window)
+    {
+        std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
+        SDL_Quit();
+        return 1;
+    }
 
     // ------------------------------------------------------------
     // BGFX INIT
     // ------------------------------------------------------------
     bgfx::Init init;
     init.type = bgfx::RendererType::OpenGL;
-    init.resolution.width = 1280;
-    init.resolution.height = 720;
+    init.resolution.width = WINDOW_WIDTH;
+    init.resolution.height = WINDOW_HEIGHT;
     init.resolution.reset = BGFX_RESET_VSYNC;
 
     SDL_SysWMinfo wmi;
@@ -192,7 +220,7 @@ int main(int argc, char* argv[])
         1.0f,
         0);
 
-    bgfx::setViewRect(0, 0, 0, 1280, 720);
+    bgfx::setViewRect(0, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
     // ------------------------------------------------------------
     // LOAD GLB
@@ -205,7 +233,7 @@ int main(int argc, char* argv[])
         &gltfModel,
         &err,
         &warn,
-        "C:\\Users\\spang\\Desktop\\Projects\\paperGB\\3d\\gb.glb"
+        GLB_PATH
     );
 
     if (!loaded)
@@ -229,15 +257,22 @@ int main(int argc, char* argv[])
     // LOAD SHADERS
     // ------------------------------------------------------------
     std::vector<char> vsBuffer;
-    bgfx::ShaderHandle vsh = loadShader("C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin", vsBuffer);
+    bgfx::ShaderHandle vsh = loadShader(VS_BIN_PATH, vsBuffer);
     std::vector<char> fsBuffer;
-    bgfx::ShaderHandle fsh = loadShader("C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin", fsBuffer);
+    bgfx::ShaderHandle fsh = loadShader(FS_BIN_PATH, fsBuffer);
     bgfx::ProgramHandle program = bgfx::createProgram(vsh, fsh, true);
 
     // ------------------------------------------------------------
     // PREPARE BUFFERS FOR ALL MESHES
     // ------------------------------------------------------------
     std::vector<MeshInstance> allMeshes;
+
+    // Vertex layout is the same for every primitive, so define it once here
+    bgfx::VertexLayout layout;
+    layout.begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
+        .end();
 
     for (size_t nodeIdx = 0; nodeIdx < gltfModel.nodes.size(); ++nodeIdx)
     {
@@ -247,8 +282,14 @@ int main(int argc, char* argv[])
         const auto& mesh = gltfModel.meshes[node.mesh];
         for (const auto& primitive : mesh.primitives)
         {
-            const auto& posAccessor =
-                gltfModel.accessors.at(primitive.attributes.find("POSITION")->second);
+            // Guard against missing POSITION attribute
+            auto posIt = primitive.attributes.find("POSITION");
+            if (posIt == primitive.attributes.end()) {
+                std::cerr << "Primitive missing POSITION attribute, skipping." << std::endl;
+                continue;
+            }
+
+            const auto& posAccessor = gltfModel.accessors.at(posIt->second);
             const auto& posView = gltfModel.bufferViews[posAccessor.bufferView];
             const auto& posBuffer = gltfModel.buffers[posView.buffer];
 
@@ -256,8 +297,14 @@ int main(int argc, char* argv[])
             size_t posStride = posView.byteStride;
             if (posStride == 0) posStride = sizeof(float) * 3;
 
-            const auto& normAccessor =
-                gltfModel.accessors.at(primitive.attributes.find("NORMAL")->second);
+            // Guard against missing NORMAL attribute
+            auto normIt = primitive.attributes.find("NORMAL");
+            if (normIt == primitive.attributes.end()) {
+                std::cerr << "Primitive missing NORMAL attribute, skipping." << std::endl;
+                continue;
+            }
+
+            const auto& normAccessor = gltfModel.accessors.at(normIt->second);
             const auto& normView = gltfModel.bufferViews[normAccessor.bufferView];
             const auto& normBuffer = gltfModel.buffers[normView.buffer];
 
@@ -275,21 +322,24 @@ int main(int argc, char* argv[])
             std::vector<uint32_t> indices32;
             bool use32 = false;
 
-            if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+            switch (indexAccessor.componentType)
+            {
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
             {
                 const uint16_t* ptr = reinterpret_cast<const uint16_t*>(
                     &indexBuffer.data[indexAccessor.byteOffset + indexView.byteOffset]);
                 indices16.assign(ptr, ptr + indexAccessor.count);
+                break;
             }
-            else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
             {
                 const uint32_t* ptr = reinterpret_cast<const uint32_t*>(
                     &indexBuffer.data[indexAccessor.byteOffset + indexView.byteOffset]);
                 indices32.assign(ptr, ptr + indexAccessor.count);
                 use32 = true;
+                break;
             }
-            else
-            {
+            default:
                 std::cerr << "Unsupported index component type!" << std::endl;
                 continue;
             }
@@ -307,12 +357,6 @@ int main(int argc, char* argv[])
                 vertices[i].ny = n[1];
                 vertices[i].nz = n[2];
             }
-
-            bgfx::VertexLayout layout;
-            layout.begin()
-                .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-                .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
-                .end();
 
             bgfx::VertexBufferHandle vbh = bgfx::createVertexBuffer(
                 bgfx::copy(vertices.data(), sizeof(Vertex) * vertexCount),
@@ -344,7 +388,6 @@ int main(int argc, char* argv[])
     // ------------------------------------------------------------
     bool running = true;
     float angle = 0.0f;
-    float cameraDistance = 150.0f;
 
     while (running)
     {
@@ -356,18 +399,18 @@ int main(int argc, char* argv[])
         }
 
         // Increment angle for camera orbit
-        angle += 0.01f;
+        angle += CAMERA_ORBIT_SPEED;
 
         // Compute camera position in circular orbit
-        float camX = sinf(angle) * cameraDistance;
-        float camZ = cosf(angle) * cameraDistance;
-        float camY = 50.0f; // Optional height offset
+        float camX = sinf(angle) * CAMERA_DISTANCE;
+        float camZ = cosf(angle) * CAMERA_DISTANCE;
+        float camY = CAMERA_HEIGHT;
 
         // Build view and projection matrices
         float view[16];
         float proj[16];
         bx::mtxLookAt(view, { camX, camY, camZ }, { 0.0f, 0.0f, 0.0f });
-        bx::mtxProj(proj, 60.0f, 1280.0f / 720.0f, 0.1f, 1000.0f, bgfx::getCaps()->homogeneousDepth);
+        bx::mtxProj(proj, CAMERA_FOV_DEG, (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, CAMERA_NEAR, CAMERA_FAR, bgfx::getCaps()->homogeneousDepth);
 
         bgfx::setViewTransform(0, view, proj);
         bgfx::touch(0);
@@ -396,7 +439,7 @@ int main(int argc, char* argv[])
                 BGFX_STATE_WRITE_RGB |
                 BGFX_STATE_WRITE_Z |
                 BGFX_STATE_DEPTH_TEST_LESS |
-                BGFX_STATE_CULL_CW                 
+                BGFX_STATE_CULL_CW
             );
 
             bgfx::submit(0, program);
