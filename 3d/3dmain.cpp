@@ -27,14 +27,14 @@ shadercRelease.exe -f fs_mesh.sc -o fs_mesh.bin --type fragment --platform windo
 
 static constexpr int   WINDOW_WIDTH = 1280;
 static constexpr int   WINDOW_HEIGHT = 720;
-static constexpr float CAMERA_DISTANCE = 150.0f;
-static constexpr float CAMERA_HEIGHT = 50.0f;
+static constexpr float CAMERA_DISTANCE = 3.0f;
+static constexpr float CAMERA_HEIGHT = 0.0f;
 static constexpr float CAMERA_ORBIT_SPEED = 0.01f;
 static constexpr float CAMERA_FOV_DEG = 60.0f;
 static constexpr float CAMERA_NEAR = 0.1f;
 static constexpr float CAMERA_FAR = 1000.0f;
 
-static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb.glb";
+static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb4.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
 
@@ -153,18 +153,16 @@ void getGlobalNodeMatrix(const tinygltf::Model& model,
     getNodeMatrix(node, local);
     int parentIdx = nodeParents[nodeIndex];
 
-    // If this node is a scene root, or parent is a scene root, stop and use identity (skip wrapper transforms)
-    if (sceneRoots.find(nodeIndex) != sceneRoots.end() ||
-        parentIdx == -1 ||
-        sceneRoots.find(parentIdx) != sceneRoots.end())
+    if (parentIdx >= 0)
     {
-        bx::mtxIdentity(out);  // skip this node's transform entirely
-        return;
+        float parentMtx[16];
+        getGlobalNodeMatrix(model, nodeParents, sceneRoots, parentIdx, parentMtx);
+        bx::mtxMul(out, local, parentMtx);
     }
-
-    float parentMtx[16];
-    getGlobalNodeMatrix(model, nodeParents, sceneRoots, parentIdx, parentMtx);
-    bx::mtxMul(out, local, parentMtx);
+    else
+    {
+        memcpy(out, local, sizeof(local));
+    }
 }
 
 // ------------------------------------------------------------
