@@ -369,3 +369,5 @@ FodyWeavers.xsd
 !/3d/fs_mesh.sc
 !/3d/vs_mesh.sc
 !/3d/varying.def.sc
+!/3d/fs_line.sc
+!/3d/vs_line.sc

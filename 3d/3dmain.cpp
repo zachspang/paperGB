@@ -244,8 +244,8 @@ bgfx::TextureHandle uploadGltfImage(const tinygltf::Model& model, int imageIndex
 }
 
 // ------------------------------------------------------------
-// Ray-triangle intersection (Möller–Trumbore)
-// Returns true and sets t if hit (front-face only).
+// Ray-triangle intersection (Möller–Trumbore), double-sided.
+// Returns true and sets t if hit.
 // ------------------------------------------------------------
 bool rayTriangleIntersect(
     const float orig[3], const float dir[3],
@@ -264,7 +264,7 @@ bool rayTriangleIntersect(
     };
 
     float a = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2];
-    if (fabsf(a) < EPSILON) return false;
+    if (fabsf(a) < EPSILON) return false; // ray parallel to triangle
 
     float f = 1.0f / a;
     float s[3] = { orig[0] - v0[0], orig[1] - v0[1], orig[2] - v0[2] };
@@ -279,8 +279,8 @@ bool rayTriangleIntersect(
     float v = f * (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]);
     if (v < 0.0f || u + v > 1.0f) return false;
 
-    t = f * (edge1[0] * q[0] + edge1[1] * q[1] + edge1[2] * q[2]);
-    return t > -1e-4f;
+    t = f * (edge2[0] * q[0] + edge2[1] * q[1] + edge2[2] * q[2]);
+    return t > 1e-4f;
 }
 
 // ------------------------------------------------------------
@@ -363,18 +363,11 @@ bool rayHitsDraggableMesh(const std::vector<MeshInstance>& allMeshes,
             uint32_t i1 = cpu.indices[tri * 3 + 1];
             uint32_t i2 = cpu.indices[tri * 3 + 2];
 
-            // World-space positions already stored in cpuMesh,
-            // but we still need the mirrorX applied (same as render path)
-            float wp0[3], wp1[3], wp2[3];
-            const float* p0 = &cpu.positions[i0 * 3];
-            const float* p1 = &cpu.positions[i1 * 3];
-            const float* p2 = &cpu.positions[i2 * 3];
-            transformPoint(mirrorX, p0, wp0);
-            transformPoint(mirrorX, p1, wp1);
-            transformPoint(mirrorX, p2, wp2);
-
             float t;
-            if (rayTriangleIntersect(rayOrigin, rayDir, wp0, wp1, wp2, t))
+            if (rayTriangleIntersect(rayOrigin, rayDir,
+                &cpu.positions[i0 * 3],
+                &cpu.positions[i1 * 3],
+                &cpu.positions[i2 * 3], t))
             {
                 if (t < bestT)
                     bestT = t;
@@ -542,11 +535,18 @@ int main(int argc, char* argv[])
     bgfx::ShaderHandle fshLine = loadShader(FS_LINE_BIN_PATH, fsLineBuffer);
     bgfx::ProgramHandle lineProgram = bgfx::createProgram(vshLine, fshLine, true);
 
-    // Persistent ray endpoints (world space, after mirrorX already accounted for)
+    // Persistent ray endpoints (world space)
     float g_rayOrigin[3] = { 0.0f, 0.0f, 0.0f };
     float g_rayEnd[3] = { 0.0f, 0.0f, 0.0f };
     bool  g_hasRay = false;
     bool  g_showRay = true; // DEBUG: toggle ray visualisation with R key
+
+    // ------------------------------------------------------------
+    // mirrorX matrix (same as render path) — constant, build once
+    // ------------------------------------------------------------
+    float mirrorX[16];
+    bx::mtxIdentity(mirrorX);
+    mirrorX[0] = -1.0f;
 
     // ------------------------------------------------------------
     // PREPARE BUFFERS FOR ALL MESHES
@@ -696,7 +696,7 @@ int main(int argc, char* argv[])
 
             // ----------------------------------------------------------
             // Build CPU-side mesh for ray testing.
-            // Store node-space positions; mirrorX will be applied at pick time.
+            // Bake nodeMtx into positions so pick space matches render space.
             // ----------------------------------------------------------
             CpuMesh cpuMesh;
 
@@ -730,11 +730,6 @@ int main(int argc, char* argv[])
             allMeshes.push_back({ buf, static_cast<int>(nodeIdx), meshName, std::move(cpuMesh) });
         }
     }
-
-    // mirrorX matrix (same as render path) — constant, build once
-    float mirrorX[16];
-    bx::mtxIdentity(mirrorX);
-    mirrorX[0] = -1.0f;
 
     // ------------------------------------------------------------
     // MAIN LOOP
@@ -778,10 +773,7 @@ int main(int argc, char* argv[])
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT)
             {
-                float invView[16];
-                bx::mtxInverse(invView, view);
-
-                // Use the explicitly computed camera position as ray origin
+                // Build pick ray: origin at camera, direction toward unprojected far point
                 float rayOrigin[3] = { camX, camY, camZ };
 
                 // Unproject two points at NDC z=-1 (near) and z=1 (far)
@@ -791,24 +783,23 @@ int main(int argc, char* argv[])
 
                 float invProj[16];
                 bx::mtxInverse(invProj, proj);
+                float invView[16];
+                bx::mtxInverse(invView, view);
 
-                // Near point in clip space -> view space -> world space
-                float clipNear[3] = { ndcX, ndcY, -1.0f };
-                float clipFar[3] = { ndcX, ndcY,  1.0f };
-
-                float viewNear[3], viewFar[3];
-                transformPoint(invProj, clipNear, viewNear);
+                // Unproject a point on the far plane into world space
+                float clipFar[3] = { ndcX, ndcY, 1.0f };
+                float viewFar[3];
                 transformPoint(invProj, clipFar, viewFar);
 
-                float worldNear[3], worldFar[3];
-                transformPoint(invView, viewNear, worldNear);
+                float worldFar[3];
                 transformPoint(invView, viewFar, worldFar);
 
+                // Direction is from camera origin toward that world space point
                 float rayDir[3] =
                 {
-                    worldFar[0] - worldNear[0],
-                    worldFar[1] - worldNear[1],
-                    worldFar[2] - worldNear[2]
+                    worldFar[0] - rayOrigin[0],
+                    worldFar[1] - rayOrigin[1],
+                    worldFar[2] - rayOrigin[2]
                 };
 
                 float len = sqrtf(rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2]);
@@ -823,6 +814,11 @@ int main(int argc, char* argv[])
                 g_rayEnd[2] = rayOrigin[2] + rayDir[2] * 100.0f;
                 g_hasRay = true;
 
+                // The render path applies mirrorX (X-flip) on top of nodeMtx.
+                // CPU positions are baked with nodeMtx only, so mirror the ray to match.
+                float rayOriginM[3] = { -rayOrigin[0], rayOrigin[1], rayOrigin[2] };
+                float rayDirM[3] = { -rayDir[0],    rayDir[1],    rayDir[2] };
+
                 float bestT = std::numeric_limits<float>::max();
                 std::string bestMesh = "(none)";
 
@@ -836,15 +832,13 @@ int main(int argc, char* argv[])
                         uint32_t i1 = cpu.indices[tri * 3 + 1];
                         uint32_t i2 = cpu.indices[tri * 3 + 2];
 
-                        float wp0[3], wp1[3], wp2[3];
-                        transformPoint(mirrorX, &cpu.positions[i0 * 3], wp0);
-                        transformPoint(mirrorX, &cpu.positions[i1 * 3], wp1);
-                        transformPoint(mirrorX, &cpu.positions[i2 * 3], wp2);
-
                         float t;
-                        if (rayTriangleIntersect(rayOrigin, rayDir, wp0, wp1, wp2, t))
+                        if (rayTriangleIntersect(rayOriginM, rayDirM,
+                            &cpu.positions[i0 * 3],
+                            &cpu.positions[i1 * 3],
+                            &cpu.positions[i2 * 3], t))
                         {
-                            if (fabsf(t) < fabsf(bestT))
+                            if (t < bestT)
                             {
                                 bestT = t;
                                 bestMesh = mi.meshName;
@@ -859,9 +853,18 @@ int main(int argc, char* argv[])
                 if (g_showRay)
                 {
                     std::cout << "=== CLICK at (" << e.button.x << ", " << e.button.y << ") ===\n";
+                    std::cout << "  Ray origin : (" << rayOrigin[0] << ", " << rayOrigin[1] << ", " << rayOrigin[2] << ")\n";
+                    std::cout << "  Ray dir    : (" << rayDir[0] << ", " << rayDir[1] << ", " << rayDir[2] << ")\n";
+
                     if (bestT < std::numeric_limits<float>::max())
                     {
+                        float hitPt[3] = {
+                            rayOrigin[0] + rayDir[0] * bestT,
+                            rayOrigin[1] + rayDir[1] * bestT,
+                            rayOrigin[2] + rayDir[2] * bestT
+                        };
                         std::cout << "  First hit mesh : \"" << bestMesh << "\" t=" << bestT << "\n";
+                        std::cout << "  Hit point      : (" << hitPt[0] << ", " << hitPt[1] << ", " << hitPt[2] << ")\n";
                         std::cout << "  Will drag      : " << (firstHitDraggable ? "YES" : "NO") << "\n";
                     }
                     else
@@ -883,12 +886,11 @@ int main(int argc, char* argv[])
                             uint32_t i0 = cpu.indices[tri * 3 + 0];
                             uint32_t i1 = cpu.indices[tri * 3 + 1];
                             uint32_t i2 = cpu.indices[tri * 3 + 2];
-                            float wp0[3], wp1[3], wp2[3];
-                            transformPoint(mirrorX, &cpu.positions[i0 * 3], wp0);
-                            transformPoint(mirrorX, &cpu.positions[i1 * 3], wp1);
-                            transformPoint(mirrorX, &cpu.positions[i2 * 3], wp2);
                             float t;
-                            if (rayTriangleIntersect(rayOrigin, rayDir, wp0, wp1, wp2, t) && fabsf(t) < fabsf(closestForMesh))
+                            if (rayTriangleIntersect(rayOriginM, rayDirM,
+                                &cpu.positions[i0 * 3],
+                                &cpu.positions[i1 * 3],
+                                &cpu.positions[i2 * 3], t) && t < closestForMesh)
                                 closestForMesh = t;
                         }
                         if (closestForMesh < std::numeric_limits<float>::max())
@@ -896,13 +898,19 @@ int main(int argc, char* argv[])
                     }
 
                     std::sort(allHits.begin(), allHits.end(), [](const HitResult& a, const HitResult& b) {
-                        return fabsf(a.t) < fabsf(b.t);
+                        return a.t < b.t;
                         });
 
                     for (size_t i = 0; i < allHits.size(); ++i)
                     {
                         const auto& h = allHits[i];
+                        float hitPt[3] = {
+                            rayOrigin[0] + rayDir[0] * h.t,
+                            rayOrigin[1] + rayDir[1] * h.t,
+                            rayOrigin[2] + rayDir[2] * h.t
+                        };
                         std::cout << "  [" << (i + 1) << "] \"" << h.name << "\" t=" << h.t
+                            << " hit=(" << hitPt[0] << ", " << hitPt[1] << ", " << hitPt[2] << ")"
                             << (h.draggable ? " [DRAGGABLE]" : "") << "\n";
                     }
                 }
