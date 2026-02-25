@@ -539,7 +539,7 @@ int main(int argc, char* argv[])
     float g_rayOrigin[3] = { 0.0f, 0.0f, 0.0f };
     float g_rayEnd[3] = { 0.0f, 0.0f, 0.0f };
     bool  g_hasRay = false;
-    bool  g_showRay = true; // DEBUG: toggle ray visualisation with R key
+    bool  g_showRay = false; // DEBUG: toggle ray visualisation with R key
 
     // ------------------------------------------------------------
     // mirrorX matrix (same as render path) — constant, build once
