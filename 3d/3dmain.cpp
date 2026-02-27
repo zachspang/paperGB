@@ -255,30 +255,39 @@ bool rayTriangleIntersect(
     float edge1[3] = { v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2] };
     float edge2[3] = { v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2] };
 
-    // h = dir x edge2
-    float h[3] = {
+    // crossDirEdge2 = dir x edge2, used to compute the determinant
+    float crossDirEdge2[3] = {
         dir[1] * edge2[2] - dir[2] * edge2[1],
         dir[2] * edge2[0] - dir[0] * edge2[2],
         dir[0] * edge2[1] - dir[1] * edge2[0]
     };
 
-    float a = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2];
-    if (fabsf(a) < EPSILON) return false; // ray parallel to triangle
+    // determinant: if near zero, ray is parallel to the triangle
+    float det = edge1[0] * crossDirEdge2[0] + edge1[1] * crossDirEdge2[1] + edge1[2] * crossDirEdge2[2];
+    if (fabsf(det) < EPSILON) return false;
 
-    float f = 1.0f / a;
-    float s[3] = { orig[0] - v0[0], orig[1] - v0[1], orig[2] - v0[2] };
-    float u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
+    float invDet = 1.0f / det;
+
+    // vecToOrigin: vector from triangle vertex v0 to ray origin
+    float vecToOrigin[3] = { orig[0] - v0[0], orig[1] - v0[1], orig[2] - v0[2] };
+
+    // u: first barycentric coordinate, must be in [0,1] to be inside the triangle
+    float u = invDet * (vecToOrigin[0] * crossDirEdge2[0] + vecToOrigin[1] * crossDirEdge2[1] + vecToOrigin[2] * crossDirEdge2[2]);
     if (u < 0.0f || u > 1.0f) return false;
 
-    float q[3] = {
-        s[1] * edge1[2] - s[2] * edge1[1],
-        s[2] * edge1[0] - s[0] * edge1[2],
-        s[0] * edge1[1] - s[1] * edge1[0]
+    // crossOriginEdge1 = vecToOrigin x edge1, used to compute v and t
+    float crossOriginEdge1[3] = {
+        vecToOrigin[1] * edge1[2] - vecToOrigin[2] * edge1[1],
+        vecToOrigin[2] * edge1[0] - vecToOrigin[0] * edge1[2],
+        vecToOrigin[0] * edge1[1] - vecToOrigin[1] * edge1[0]
     };
-    float v = f * (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]);
+
+    // v: second barycentric coordinate, u+v must also stay within [0,1]
+    float v = invDet * (dir[0] * crossOriginEdge1[0] + dir[1] * crossOriginEdge1[1] + dir[2] * crossOriginEdge1[2]);
     if (v < 0.0f || u + v > 1.0f) return false;
 
-    t = f * (edge2[0] * q[0] + edge2[1] * q[1] + edge2[2] * q[2]);
+    // t: distance along the ray to the intersection point
+    t = invDet * (edge2[0] * crossOriginEdge1[0] + edge2[1] * crossOriginEdge1[1] + edge2[2] * crossOriginEdge1[2]);
     return t > 1e-4f;
 }
 
@@ -287,6 +296,7 @@ bool rayTriangleIntersect(
 // ------------------------------------------------------------
 void transformPoint(const float m[16], const float in[3], float out[3])
 {
+    // homogeneous w component, used to perspective-divide the result
     float w = m[3] * in[0] + m[7] * in[1] + m[11] * in[2] + m[15];
     if (fabsf(w) < 1e-9f) w = 1.0f;
     out[0] = (m[0] * in[0] + m[4] * in[1] + m[8] * in[2] + m[12]) / w;
@@ -704,22 +714,22 @@ int main(int argc, char* argv[])
 
                 // Unproject a point on the far plane into world space
                 float clipFar[3] = { ndcX, ndcY, 1.0f };
-                float viewFar[3];
-                transformPoint(invProj, clipFar, viewFar);
+                float viewSpaceFar[3];
+                transformPoint(invProj, clipFar, viewSpaceFar);
 
-                float worldFar[3];
-                transformPoint(invView, viewFar, worldFar);
+                float worldSpaceFar[3];
+                transformPoint(invView, viewSpaceFar, worldSpaceFar);
 
                 // Direction is from camera origin toward that world space point
                 float rayDir[3] =
                 {
-                    worldFar[0] - rayOrigin[0],
-                    worldFar[1] - rayOrigin[1],
-                    worldFar[2] - rayOrigin[2]
+                    worldSpaceFar[0] - rayOrigin[0],
+                    worldSpaceFar[1] - rayOrigin[1],
+                    worldSpaceFar[2] - rayOrigin[2]
                 };
 
-                float len = sqrtf(rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2]);
-                if (len > 1e-9f) { rayDir[0] /= len; rayDir[1] /= len; rayDir[2] /= len; }
+                float rayLen = sqrtf(rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2]);
+                if (rayLen > 1e-9f) { rayDir[0] /= rayLen; rayDir[1] /= rayLen; rayDir[2] /= rayLen; }
 
                 // Store ray for visualisation
                 g_rayOrigin[0] = rayOrigin[0] + rayDir[0] * 0.05f;
