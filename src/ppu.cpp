@@ -2,9 +2,17 @@
 #include "cstring"
 #include "gb.h"
 
-PPU::PPU(GB* in_gb) :
-	gb(in_gb) {
-	init_SDL();
+//If true ppu will start up its own SDL window to display the emulator
+bool NO_3D_MODE = true;
+
+PPU::PPU(GB* in_gb, TextureBuffer* in_tex_buffer) :
+	gb(in_gb),
+	emuScreenTexBuffer(in_tex_buffer){
+	if (NO_3D_MODE) {
+		init_SDL();
+	}
+	//Set size to screen w * h * 4 bytes for RGBA
+	pixels.resize(160 * 144 * 4);
 	current_mode = VBlank;
 	dot_count = 0;
 	frame_done = false;
@@ -45,20 +53,36 @@ void PPU::init_SDL() {
 	renderer = SDL_CreateRenderer(window, -1, 0);
 }
 
-void PPU::set_renderer_color(int id, uint8_t palette) {
+void PPU::set_pixel_color(int id, uint8_t palette, int x, int y) {
 	int color = (palette >> (id * 2)) & 0b11;
+	int index = (y * 160 + x) * 4;
+
+	if (x < 0 || x >= 160) return;
+
 	switch (color) {
 	case 0:
-		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+		pixels[index + 0] = 255;
+		pixels[index + 1] = 255;
+		pixels[index + 2] = 255;
+		pixels[index + 3] = 255;
 		break;
 	case 1:
-		SDL_SetRenderDrawColor(renderer, 170, 170, 170, 255);
+		pixels[index + 0] = 170;
+		pixels[index + 1] = 170;
+		pixels[index + 2] = 170;
+		pixels[index + 3] = 255;
 		break;
 	case 2:
-		SDL_SetRenderDrawColor(renderer, 85, 85, 85, 255);
+		pixels[index + 0] = 85;
+		pixels[index + 1] = 85;
+		pixels[index + 2] = 85;
+		pixels[index + 3] = 255;
 		break;
 	case 3:
-		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+		pixels[index + 0] = 0;
+		pixels[index + 1] = 0;
+		pixels[index + 2] = 0;
+		pixels[index + 3] = 255;
 		break;
 	}
 }
@@ -263,12 +287,6 @@ void PPU::check_stat() {
 }
 
 void PPU::draw_line() {
-	//Rectangle representing a single pixel
-	SDL_Rect pixel = SDL_Rect();
-	pixel.w = WINDOW_SCALE_FACTOR;
-	pixel.h = WINDOW_SCALE_FACTOR;
-	pixel.y = ly * WINDOW_SCALE_FACTOR;
-
 	//Used to check bg color ids to determine object priority
 	int bg_color_ids[8 * 32];
 	memset(bg_color_ids, 0, sizeof(bg_color_ids));
@@ -322,15 +340,17 @@ void PPU::draw_line() {
 			}
 
 			//Draw 8 pixels of this tile
+			//pixel_x is the x value of the pixel within the tile 0-7
+			//internal_x is the internal x value of the pixel, can be beyond the screen bound
+			//screen_x is the position of the pixel on the screen
 			for (int pixel_x = 0; pixel_x < 8; pixel_x++) {
-				int x = (tile_x * 8) + pixel_x;
-				pixel.x = (x - (bg_viewport_x % 8)) * WINDOW_SCALE_FACTOR;
+				int internal_x = (tile_x * 8) + pixel_x;
+				int screen_x = (internal_x - (bg_viewport_x % 8));
 
 				int color_id = (((byte2 >> (7 - pixel_x)) << 1) & 0b10) | ((byte1 >> (7 - pixel_x)) & 0b1);
-				bg_color_ids[x] = color_id;
+				bg_color_ids[internal_x] = color_id;
 
-				set_renderer_color(color_id, bg_palette);
-				SDL_RenderFillRect(renderer, &pixel);
+				set_pixel_color(color_id, bg_palette, screen_x, ly);
 			}
 			if (win_drawn) win_tile_x++;
 		}
@@ -421,27 +441,42 @@ void PPU::draw_line() {
 			//Draw 8 pixels of object tile
 			for (int i = 0; i < 8; i++) {
 				int pixel_x = xflip ? (7 - i) : i;
-				int x = obj_x - 8 + i;
-				pixel.x = x * WINDOW_SCALE_FACTOR;
+				int internal_x = obj_x - 8 + i;
 
-				if (bg_priority && bg_color_ids[x] > 0) continue;
+				if (bg_priority && bg_color_ids[internal_x] > 0) continue;
 				int color_id = (((byte2 >> (7 - pixel_x)) << 1) & 0b10) | ((byte1 >> (7 - pixel_x)) & 0b1);
 				if (color_id == 0) continue;
 
 				//If an object with higher priority has already drawn an opaque pixel at this coord continue
-				if (obj_opaque_x_coords[x] != 0 && obj_x >= obj_opaque_x_coords[x]) continue;
-				obj_opaque_x_coords[x] = obj_x;
+				if (obj_opaque_x_coords[internal_x] != 0 && obj_x >= obj_opaque_x_coords[internal_x]) continue;
+				obj_opaque_x_coords[internal_x] = obj_x;
 
-				set_renderer_color(color_id, obj_palette);
-				SDL_RenderFillRect(renderer, &pixel);
+				set_pixel_color(color_id, obj_palette, internal_x, ly);
 			}
 		}
 	}
 }
 
 void PPU::render_frame() {
-	SDL_PumpEvents();
-	SDL_RenderPresent(renderer);
-	SDL_RenderClear(renderer);
+	if (NO_3D_MODE) {
+		//Rectangle representing a single pixel
+		SDL_Rect pixel = SDL_Rect();
+		pixel.w = WINDOW_SCALE_FACTOR;
+		pixel.h = WINDOW_SCALE_FACTOR;
+		for (int i = 0; i < 160 * 144 * 4; i += 4) {
+			pixel.x = (i / 4) % 160 * WINDOW_SCALE_FACTOR;
+			pixel.y = (i / 4) / 160 * WINDOW_SCALE_FACTOR;
+			SDL_SetRenderDrawColor(renderer, pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]);
+			SDL_RenderFillRect(renderer, &pixel);
+		}
+		SDL_PumpEvents();
+		SDL_RenderPresent(renderer);
+		SDL_RenderClear(renderer);
+	}
+	else {
+		std::lock_guard<std::mutex> lock(emuScreenTexBuffer->mutex);
+		emuScreenTexBuffer->pixels = pixels;
+		emuScreenTexBuffer->dirty = true;
+	}
 	frame_done = true;
 }

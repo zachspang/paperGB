@@ -1,6 +1,7 @@
 #pragma once
 #include "common.h"
 #include <SDL.h>
+#include "TextureBuffer.h"
 
 class GB;
 
@@ -14,8 +15,9 @@ class PPU {
 public:
 	friend class MMU;
 
-	PPU(GB* in_gb);
+	PPU(GB* in_gb, TextureBuffer* emuScreenTexBuffer);
 
+	TextureBuffer* emuScreenTexBuffer;
 	bool frame_done;
 
 	//Can only write to bits 6-3
@@ -46,6 +48,8 @@ private:
 	PPUMode current_mode;
 	//How many dots have passed this current PPU mode
 	int dot_count;
+	//Raw pixel buffer. Each pixel is 4 bytes RGBA
+	std::vector<uint8_t> pixels;
 	SDL_Renderer* renderer;
 
 	void lcd_status_write_bit(uint8_t bit_index, bool bit);
@@ -80,7 +84,7 @@ private:
 	uint8_t OAM[160];
 
 	void init_SDL();
-	void set_renderer_color(int id, uint8_t palette);
+	void set_pixel_color(int id, uint8_t palette, int x, int y);
 	bool stat_line;
 	void check_stat();
 	void draw_line();

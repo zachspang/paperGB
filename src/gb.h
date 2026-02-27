@@ -8,6 +8,7 @@
 #include "mmu.h"
 #include "timer.h"
 #include "input.h"
+#include "TextureBuffer.h"
 
 class CPU;
 
@@ -18,7 +19,7 @@ public:
 
 	//Initialize GB object with a game cartridge 
 	//TODO: and optionally a save state
-	GB(Cartridge in_cart);
+	GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer);
 
 	//Start emulator loop
 	void run();

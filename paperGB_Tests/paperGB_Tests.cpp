@@ -6,6 +6,7 @@
 
 #include "cpu.h"
 #include "gb.h"
+#include "TextureBuffer.h"
 
 using json = nlohmann::json;
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
@@ -35,7 +36,8 @@ namespace paperGBTests
 
 			Cartridge* cart = new Cartridge();
 			cart->load_rom("..\\..\\paperGB_Tests\\blank.gb");
-			GB* gameboy = new GB(*cart);
+			TextureBuffer emuScreenTexBuffer;
+			GB* gameboy = new GB(*cart, &emuScreenTexBuffer);
 			CPU cpu = CPU(gameboy);
 			int start = 0;
 			int end = 0;
@@ -120,7 +122,8 @@ namespace paperGBTests
 
 			Cartridge* cart = new Cartridge();
 			cart->load_rom("..\\..\\paperGB_Tests\\blank.gb");
-			GB* gameboy = new GB(*cart);
+			TextureBuffer emuScreenTexBuffer;
+			GB* gameboy = new GB(*cart, &emuScreenTexBuffer);
 			CPU cpu = CPU(gameboy);
 			int start = 0;
 			int end = 0;

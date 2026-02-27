@@ -2,10 +2,10 @@
 #include <chrono>
 #include <thread>
 
-GB::GB(Cartridge in_cart) :
+GB::GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer) :
 	cart(in_cart),
 	cpu(this),
-	ppu(this),
+	ppu(this, emuScreenTexBuffer),
 	apu(),
 	mmu(this),
 	timer(this),
