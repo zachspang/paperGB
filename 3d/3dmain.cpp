@@ -188,7 +188,6 @@ void getNodeMatrix(const tinygltf::Node& node, float out[16])
 // ------------------------------------------------------------
 void getGlobalNodeMatrix(const tinygltf::Model& model,
     const std::vector<int>& nodeParents,
-    const std::unordered_set<int>& sceneRoots,
     int nodeIndex,
     float out[16])
 {
@@ -200,7 +199,7 @@ void getGlobalNodeMatrix(const tinygltf::Model& model,
     if (parentIdx >= 0)
     {
         float parentMtx[16];
-        getGlobalNodeMatrix(model, nodeParents, sceneRoots, parentIdx, parentMtx);
+        getGlobalNodeMatrix(model, nodeParents, parentIdx, parentMtx);
         bx::mtxMul(out, local, parentMtx);
     }
     else
@@ -293,89 +292,6 @@ void transformPoint(const float m[16], const float in[3], float out[3])
     out[0] = (m[0] * in[0] + m[4] * in[1] + m[8] * in[2] + m[12]) / w;
     out[1] = (m[1] * in[0] + m[5] * in[1] + m[9] * in[2] + m[13]) / w;
     out[2] = (m[2] * in[0] + m[6] * in[1] + m[10] * in[2] + m[14]) / w;
-}
-
-// ------------------------------------------------------------
-// Build a pick ray from screen coords using view/proj matrices
-// ------------------------------------------------------------
-void buildPickRay(int mx, int my, int width, int height,
-    const float view[16], const float proj[16],
-    float rayOrigin[3], float rayDir[3])
-{
-    // NDC [-1,1]
-    float ndcX = (2.0f * mx / width) - 1.0f;
-    float ndcY = 1.0f - (2.0f * my / height);
-
-    // Inverse projection to view space
-    float invProj[16];
-    bx::mtxInverse(invProj, proj);
-
-    float clipNear[3] = { ndcX, ndcY, -1.0f };
-    float clipFar[3] = { ndcX, ndcY,  1.0f };
-
-    float viewNear[3], viewFar[3];
-    transformPoint(invProj, clipNear, viewNear);
-    transformPoint(invProj, clipFar, viewFar);
-
-    // Inverse view to world space
-    float invView[16];
-    bx::mtxInverse(invView, view);
-
-    float worldNear[3], worldFar[3];
-    transformPoint(invView, viewNear, worldNear);
-    transformPoint(invView, viewFar, worldFar);
-
-    rayOrigin[0] = worldNear[0];
-    rayOrigin[1] = worldNear[1];
-    rayOrigin[2] = worldNear[2];
-
-    float dx = worldFar[0] - worldNear[0];
-    float dy = worldFar[1] - worldNear[1];
-    float dz = worldFar[2] - worldNear[2];
-    float len = sqrtf(dx * dx + dy * dy + dz * dz);
-    if (len > 1e-9f) { dx /= len; dy /= len; dz /= len; }
-
-    rayDir[0] = dx;
-    rayDir[1] = dy;
-    rayDir[2] = dz;
-}
-
-// ------------------------------------------------------------
-// Test ray against all draggable mesh instances.
-// Returns true if any named mesh was hit.
-// ------------------------------------------------------------
-bool rayHitsDraggableMesh(const std::vector<MeshInstance>& allMeshes,
-    const float rayOrigin[3], const float rayDir[3],
-    const float mirrorX[16])
-{
-    float bestT = std::numeric_limits<float>::max();
-
-    for (const auto& mi : allMeshes)
-    {
-        if (DRAGGABLE_MESH_NAMES.find(mi.meshName) == DRAGGABLE_MESH_NAMES.end())
-            continue;
-
-        const auto& cpu = mi.cpuMesh;
-        size_t triCount = cpu.indices.size() / 3;
-        for (size_t tri = 0; tri < triCount; ++tri)
-        {
-            uint32_t i0 = cpu.indices[tri * 3 + 0];
-            uint32_t i1 = cpu.indices[tri * 3 + 1];
-            uint32_t i2 = cpu.indices[tri * 3 + 2];
-
-            float t;
-            if (rayTriangleIntersect(rayOrigin, rayDir,
-                &cpu.positions[i0 * 3],
-                &cpu.positions[i1 * 3],
-                &cpu.positions[i2 * 3], t))
-            {
-                if (t < bestT)
-                    bestT = t;
-            }
-        }
-    }
-
-    return bestT < std::numeric_limits<float>::max();
 }
 
 // ------------------------------------------------------------
@@ -702,7 +618,7 @@ int main(int argc, char* argv[])
 
             // Get the node's global transform to put verts into world space
             float nodeMtx[16];
-            getGlobalNodeMatrix(gltfModel, nodeParents, sceneRoots, nodeIdx, nodeMtx);
+            getGlobalNodeMatrix(gltfModel, nodeParents, nodeIdx, nodeMtx);
 
             cpuMesh.positions.resize(vertexCount * 3);
             for (uint32_t i = 0; i < vertexCount; ++i)
@@ -951,7 +867,7 @@ int main(int argc, char* argv[])
         {
             // Compute global node transform including hierarchy
             float nodeMtx[16];
-            getGlobalNodeMatrix(gltfModel, nodeParents, sceneRoots, meshInst.nodeIndex, nodeMtx);
+            getGlobalNodeMatrix(gltfModel, nodeParents, meshInst.nodeIndex, nodeMtx);
 
             float finalMtx[16];
             bx::mtxMul(finalMtx, nodeMtx, mirrorX);
