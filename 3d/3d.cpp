@@ -266,7 +266,7 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
     }
 
     SDL_Window* window = SDL_CreateWindow(
-        "GLB Viewer",
+        "paperGB",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         WINDOW_WIDTH,
