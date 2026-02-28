@@ -3,7 +3,7 @@
 #include "gb.h"
 
 //If true ppu will start up its own SDL window to display the emulator
-bool NO_3D_MODE = true;
+bool NO_3D_MODE = false;
 
 PPU::PPU(GB* in_gb, TextureBuffer* in_tex_buffer) :
 	gb(in_gb),
@@ -61,27 +61,27 @@ void PPU::set_pixel_color(int id, uint8_t palette, int x, int y) {
 
 	switch (color) {
 	case 0:
-		pixels[index + 0] = 255;
-		pixels[index + 1] = 255;
-		pixels[index + 2] = 255;
+		pixels[index + 0] = 155;
+		pixels[index + 1] = 188;
+		pixels[index + 2] = 15;
 		pixels[index + 3] = 255;
 		break;
 	case 1:
-		pixels[index + 0] = 170;
-		pixels[index + 1] = 170;
-		pixels[index + 2] = 170;
+		pixels[index + 0] = 139;
+		pixels[index + 1] = 172;
+		pixels[index + 2] = 15;
 		pixels[index + 3] = 255;
 		break;
 	case 2:
-		pixels[index + 0] = 85;
-		pixels[index + 1] = 85;
-		pixels[index + 2] = 85;
+		pixels[index + 0] = 48;
+		pixels[index + 1] = 98;
+		pixels[index + 2] = 48;
 		pixels[index + 3] = 255;
 		break;
 	case 3:
-		pixels[index + 0] = 0;
-		pixels[index + 1] = 0;
-		pixels[index + 2] = 0;
+		pixels[index + 0] = 15;
+		pixels[index + 1] = 56;
+		pixels[index + 2] = 15;
 		pixels[index + 3] = 255;
 		break;
 	}

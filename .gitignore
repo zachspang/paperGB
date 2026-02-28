@@ -365,7 +365,8 @@ FodyWeavers.xsd
 /roms
 /paperGB_Tests/blank.sav
 /3d/*
-!/3d/3dmain.cpp
+!/3d/3d.cpp
+!/3d/3d.h
 !/3d/fs_mesh.sc
 !/3d/vs_mesh.sc
 !/3d/varying.def.sc

@@ -6,27 +6,12 @@ shadercRelease.exe -f vs_line.sc -o vs_line.bin --type vertex   --platform windo
 shadercRelease.exe -f fs_line.sc -o fs_line.bin --type fragment --platform windows --profile 120 -i .
 */
 
-#include <bgfx/bgfx.h>
-#include <bgfx/platform.h>
-#include <bx/math.h>
-
-#include <SDL.h>
-#include <SDL_syswm.h>
+#include "3d.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define TINYGLTF_IMPLEMENTATION
 #include <tinygltf-2.9.7/tiny_gltf.h>
-
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-#include <string>
-#include <limits>
-#include <cmath>
 
 // ------------------------------------------------------------
 // Constants
@@ -39,9 +24,9 @@ static constexpr float CAMERA_HEIGHT = 0.0f;
 static constexpr float CAMERA_ORBIT_SPEED = 0.01f;
 static constexpr float CAMERA_FOV_DEG = 60.0f;
 static constexpr float CAMERA_NEAR = 0.1f;
-static constexpr float CAMERA_FAR = 1000.0f;
+static constexpr float CAMERA_FAR = 10.0f;
 
-static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb5.glb";
+static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb9.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
 static const char* VS_LINE_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_line.bin";
@@ -57,6 +42,7 @@ static const std::unordered_set<std::string> DRAGGABLE_MESH_NAMES = {
     "dviMetal_low_External_0",
     "dviPart_low_External_0",
     "dviSmall_low_External_0",
+    "emuScreen",
     "lock_low_External_0",
     "lockOpen_low_External_0",
     "Plane009_Black Screen_0",
@@ -89,43 +75,6 @@ bgfx::ShaderHandle loadShader(const char* filePath, std::vector<char>& bufferSto
     return bgfx::createShader(bgfx::makeRef(bufferStorage.data(), bufferStorage.size()));
 }
 // ------------------------------------------------------------
-
-struct Vertex
-{
-    float x, y, z;
-    float nx, ny, nz;
-    float u, v;
-};
-
-struct LineVertex
-{
-    float x, y, z;
-    uint32_t abgr;
-};
-
-// CPU-side triangle soup for ray testing
-struct CpuMesh
-{
-    std::vector<float> positions; // flat: x0,y0,z0, x1,y1,z1, ...
-    std::vector<uint32_t> indices;// always 32-bit for simplicity
-};
-
-struct MeshBuffers
-{
-    bgfx::VertexBufferHandle vbh;
-    bgfx::IndexBufferHandle ibh;
-    uint32_t indexCount;
-    bool use32;
-    bgfx::TextureHandle texture;
-};
-
-struct MeshInstance
-{
-    MeshBuffers buffers;
-    int nodeIndex; // reference to gltf node
-    std::string meshName; // name of the parent gltf mesh
-    CpuMesh cpuMesh; // world-space triangles for picking
-};
 
 // ------------------------------------------------------------
 // Helper: get node local transform
@@ -305,7 +254,7 @@ void transformPoint(const float m[16], const float in[3], float out[3])
 }
 
 // ------------------------------------------------------------
-int main(int argc, char* argv[])
+int run3d(TextureBuffer* emuScreenTexBuffer)
 {
     // ------------------------------------------------------------
     // SDL INIT
@@ -658,6 +607,25 @@ int main(int argc, char* argv[])
     }
 
     // ------------------------------------------------------------
+    // DYNAMIC SCREEN TEXTURE
+    // ------------------------------------------------------------
+
+    // Find the emuScreen mesh instance and replace its texture with a dynamic one
+    bgfx::TextureHandle emuScreenTex = bgfx::createTexture2D(
+        (uint16_t)emuScreenTexBuffer->width,
+        (uint16_t)emuScreenTexBuffer->height,
+        false, 1,
+        bgfx::TextureFormat::RGBA8,
+        BGFX_TEXTURE_NONE
+    );
+
+    for (auto& meshInst : allMeshes)
+    {
+        if (meshInst.meshName == "emuScreen")
+            meshInst.buffers.texture = emuScreenTex;
+    }
+
+    // ------------------------------------------------------------
     // MAIN LOOP
     // ------------------------------------------------------------
     bool running = true;
@@ -872,6 +840,25 @@ int main(int argc, char* argv[])
         bgfx::setViewTransform(0, view, proj);
         bgfx::touch(0);
 
+        // Upload new emuScreen texture if the worker has produced one
+        {
+            std::lock_guard<std::mutex> lock(emuScreenTexBuffer->mutex);
+            if (emuScreenTexBuffer->dirty)
+            {
+                const bgfx::Memory* mem = bgfx::copy(
+                    emuScreenTexBuffer->pixels.data(),
+                    (uint32_t)emuScreenTexBuffer->pixels.size()
+                );
+                bgfx::updateTexture2D(emuScreenTex, 0, 0,
+                    0, 0,
+                    (uint16_t)emuScreenTexBuffer->width,
+                    (uint16_t)emuScreenTexBuffer->height,
+                    mem
+                );
+                emuScreenTexBuffer->dirty = false;
+            }
+        }
+
         // Render all meshes
         for (const auto& meshInst : allMeshes)
         {
@@ -890,12 +877,15 @@ int main(int argc, char* argv[])
             if (bgfx::isValid(meshInst.buffers.texture))
                 bgfx::setTexture(0, s_texColor, meshInst.buffers.texture);
 
+            //Skip culling on screen because it breaks it
+            uint64_t cullFlag = (meshInst.meshName == "emuScreen") ? 0 : BGFX_STATE_CULL_CW;
+
             // Render state
             bgfx::setState(
                 BGFX_STATE_WRITE_RGB |
                 BGFX_STATE_WRITE_Z |
                 BGFX_STATE_DEPTH_TEST_LESS |
-                BGFX_STATE_CULL_CW
+                cullFlag
             );
 
             bgfx::submit(0, program);

@@ -42,7 +42,7 @@
     <ClCompile Include="src\timer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="3d\3dmain.cpp">
+    <ClCompile Include="3d\3d.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\main.cpp">
@@ -78,6 +78,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\TextureBuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="3d\3d.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

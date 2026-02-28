@@ -132,7 +132,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="3d\3dmain.cpp" />
+    <ClCompile Include="3d\3d.cpp" />
     <ClCompile Include="src\apu.cpp" />
     <ClCompile Include="src\cartridge.cpp" />
     <ClCompile Include="src\common.cpp" />
@@ -145,6 +145,7 @@
     <ClCompile Include="src\timer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="3d\3d.h" />
     <ClInclude Include="src\apu.h" />
     <ClInclude Include="src\cartridge.h" />
     <ClInclude Include="src\common.h" />
