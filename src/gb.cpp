@@ -55,7 +55,7 @@ void GB::run() {
 
 		frame_count++;
 		if (frame_count % 60 == 0) {
-			LOG("AVG FRAMETIME: %f", total_frametime / 60);
+			//LOG("AVG FRAMETIME: %f", total_frametime / 60);
 			total_frametime = 0;
 		}
 

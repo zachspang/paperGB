@@ -26,7 +26,7 @@ static constexpr float CAMERA_FOV_DEG = 60.0f;
 static constexpr float CAMERA_NEAR = 0.1f;
 static constexpr float CAMERA_FAR = 10.0f;
 
-static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb9.glb";
+static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb6.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
 static const char* VS_LINE_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_line.bin";
@@ -50,6 +50,237 @@ static const std::unordered_set<std::string> DRAGGABLE_MESH_NAMES = {
     "screenHolder_low_External_0",
     "volumeBox_low_External_0"
 };
+
+// ------------------------------------------------------------
+// Animation structures
+// ------------------------------------------------------------
+
+enum class AnimTargetPath { Translation, Rotation, Scale };
+enum class AnimInterpolation { Linear, Step };
+
+struct AnimSampler
+{
+    std::vector<float> times;
+    std::vector<float> values;
+    AnimInterpolation  interp = AnimInterpolation::Linear;
+    int                components = 3;
+};
+
+struct AnimChannel
+{
+    int            nodeIndex = -1;
+    AnimTargetPath path = AnimTargetPath::Translation;
+    AnimSampler    sampler;
+};
+
+struct Animation
+{
+    std::string              name;
+    std::vector<AnimChannel> channels;
+    float                    duration = 0.0f;
+};
+
+struct AnimationState
+{
+    int   animIndex = -1;
+    float time = 0.0f;
+    bool  playing = false;
+};
+
+struct NodeTRS
+{
+    float t[3] = { 0, 0, 0 };
+    float r[4] = { 0, 0, 0, 1 };
+    float s[3] = { 1, 1, 1 };
+    bool  hasT = false;
+    bool  hasR = false;
+    bool  hasS = false;
+};
+
+// ------------------------------------------------------------
+static std::vector<float> readFloatAccessor(const tinygltf::Model& model, int accessorIdx)
+{
+    const auto& acc = model.accessors[accessorIdx];
+    const auto& view = model.bufferViews[acc.bufferView];
+    const auto& buf = model.buffers[view.buffer];
+
+    int components = 1;
+    switch (acc.type)
+    {
+    case TINYGLTF_TYPE_SCALAR: components = 1;  break;
+    case TINYGLTF_TYPE_VEC2:   components = 2;  break;
+    case TINYGLTF_TYPE_VEC3:   components = 3;  break;
+    case TINYGLTF_TYPE_VEC4:   components = 4;  break;
+    case TINYGLTF_TYPE_MAT4:   components = 16; break;
+    default: break;
+    }
+
+    size_t stride = view.byteStride ? view.byteStride : (components * sizeof(float));
+    const uint8_t* base = buf.data.data() + view.byteOffset + acc.byteOffset;
+
+    std::vector<float> out;
+    out.reserve(acc.count * components);
+    for (size_t i = 0; i < acc.count; ++i)
+    {
+        const float* fp = reinterpret_cast<const float*>(base + stride * i);
+        for (int c = 0; c < components; ++c)
+            out.push_back(fp[c]);
+    }
+    return out;
+}
+
+// ------------------------------------------------------------
+static std::vector<Animation> parseAnimations(const tinygltf::Model& model)
+{
+    std::vector<Animation> result;
+    for (const auto& anim : model.animations)
+    {
+        Animation a;
+        a.name = anim.name;
+
+        std::vector<AnimSampler> samplers;
+        for (const auto& s : anim.samplers)
+        {
+            AnimSampler as;
+            as.times = readFloatAccessor(model, s.input);
+            as.components = (model.accessors[s.output].type == TINYGLTF_TYPE_VEC4) ? 4 : 3;
+            as.values = readFloatAccessor(model, s.output);
+            as.interp = (s.interpolation == "STEP") ? AnimInterpolation::Step : AnimInterpolation::Linear;
+            samplers.push_back(std::move(as));
+        }
+
+        for (const auto& ch : anim.channels)
+        {
+            if (ch.sampler < 0 || ch.sampler >= (int)samplers.size()) continue;
+            if (ch.target_node < 0) continue;
+
+            AnimChannel ac;
+            ac.nodeIndex = ch.target_node;
+            ac.sampler = samplers[ch.sampler];
+
+            if (ch.target_path == "translation") ac.path = AnimTargetPath::Translation;
+            else if (ch.target_path == "rotation")    ac.path = AnimTargetPath::Rotation;
+            else if (ch.target_path == "scale")       ac.path = AnimTargetPath::Scale;
+            else continue;
+
+            if (!ac.sampler.times.empty())
+                a.duration = std::max(a.duration, ac.sampler.times.back());
+
+            a.channels.push_back(std::move(ac));
+        }
+
+        result.push_back(std::move(a));
+    }
+    return result;
+}
+
+// ------------------------------------------------------------
+static void sampleSampler(const AnimSampler& s, float t, float* out)
+{
+    const int N = (int)s.times.size();
+    if (N == 0) return;
+
+    if (t >= s.times[N - 1])
+    {
+        for (int i = 0; i < s.components; ++i)
+            out[i] = s.values[(N - 1) * s.components + i];
+        return;
+    }
+
+    if (t <= s.times[0])
+    {
+        for (int i = 0; i < s.components; ++i)
+            out[i] = s.values[i];
+        return;
+    }
+
+    int hi = 1;
+    while (hi < N - 1 && s.times[hi] < t) ++hi;
+    int lo = hi - 1;
+
+    if (s.interp == AnimInterpolation::Step || s.times[hi] == s.times[lo])
+    {
+        for (int i = 0; i < s.components; ++i)
+            out[i] = s.values[lo * s.components + i];
+        return;
+    }
+
+    float alpha = fmaxf(0.0f, fminf(1.0f, (t - s.times[lo]) / (s.times[hi] - s.times[lo])));
+    for (int i = 0; i < s.components; ++i)
+        out[i] = s.values[lo * s.components + i] * (1.0f - alpha)
+        + s.values[hi * s.components + i] * alpha;
+
+    if (s.components == 4)
+    {
+        float len = sqrtf(out[0] * out[0] + out[1] * out[1] + out[2] * out[2] + out[3] * out[3]);
+        if (len > 1e-9f) { out[0] /= len; out[1] /= len; out[2] /= len; out[3] /= len; }
+    }
+}
+
+// ------------------------------------------------------------
+static void applyAnimation(const Animation& anim, float time, std::vector<NodeTRS>& animTRS)
+{
+    for (const auto& ch : anim.channels)
+    {
+        if (ch.nodeIndex < 0 || ch.nodeIndex >= (int)animTRS.size()) continue;
+        NodeTRS& trs = animTRS[ch.nodeIndex];
+        switch (ch.path)
+        {
+        case AnimTargetPath::Translation: sampleSampler(ch.sampler, time, trs.t); trs.hasT = true; break;
+        case AnimTargetPath::Rotation:    sampleSampler(ch.sampler, time, trs.r); trs.hasR = true; break;
+        case AnimTargetPath::Scale:       sampleSampler(ch.sampler, time, trs.s); trs.hasS = true; break;
+        }
+    }
+}
+
+// ------------------------------------------------------------
+static void getGlobalNodeMatrixAnimated(const tinygltf::Model& model,
+    const std::vector<int>& nodeParents,
+    int nodeIndex,
+    const std::vector<NodeTRS>& animTRS,
+    float out[16])
+{
+    const auto& node = model.nodes[nodeIndex];
+    const NodeTRS& trs = animTRS[nodeIndex];
+
+    float local[16];
+    if (!node.matrix.empty())
+    {
+        for (int i = 0; i < 16; ++i) local[i] = static_cast<float>(node.matrix[i]);
+    }
+    else
+    {
+        float tx = trs.hasT ? trs.t[0] : (node.translation.size() >= 3 ? (float)node.translation[0] : 0.0f);
+        float ty = trs.hasT ? trs.t[1] : (node.translation.size() >= 3 ? (float)node.translation[1] : 0.0f);
+        float tz = trs.hasT ? trs.t[2] : (node.translation.size() >= 3 ? (float)node.translation[2] : 0.0f);
+        float qx = trs.hasR ? -trs.r[0] : (node.rotation.size() >= 4 ? (float)node.rotation[0] : 0.0f);
+        float qy = trs.hasR ? -trs.r[1] : (node.rotation.size() >= 4 ? (float)node.rotation[1] : 0.0f);
+        float qz = trs.hasR ? trs.r[2] : (node.rotation.size() >= 4 ? (float)node.rotation[2] : 0.0f);
+        float qw = trs.hasR ? trs.r[3] : (node.rotation.size() >= 4 ? (float)node.rotation[3] : 1.0f);
+        float sx = trs.hasS ? trs.s[0] : (node.scale.size() >= 3 ? (float)node.scale[0] : 1.0f);
+        float sy = trs.hasS ? trs.s[1] : (node.scale.size() >= 3 ? (float)node.scale[1] : 1.0f);
+        float sz = trs.hasS ? trs.s[2] : (node.scale.size() >= 3 ? (float)node.scale[2] : 1.0f);
+
+        float T[16], R[16], S[16], tmp[16];
+        bx::mtxTranslate(T, tx, ty, tz);
+        bx::mtxFromQuaternion(R, bx::Quaternion(qx, qy, qz, qw));
+        bx::mtxScale(S, sx, sy, sz);
+        bx::mtxMul(tmp, S, R);
+        bx::mtxMul(local, tmp, T);
+    }
+
+    int parentIdx = nodeParents[nodeIndex];
+    if (parentIdx >= 0)
+    {
+        float parentMtx[16];
+        getGlobalNodeMatrixAnimated(model, nodeParents, parentIdx, animTRS, parentMtx);
+        bx::mtxMul(out, local, parentMtx);
+    }
+    else
+    {
+        memcpy(out, local, sizeof(local));
+    }
+}
 
 // ------------------------------------------------------------
 // Helper: load compiled bgfx shader
@@ -135,7 +366,7 @@ void getNodeMatrix(const tinygltf::Node& node, float out[16])
 // ------------------------------------------------------------
 // Helper: get global node transform (includes parent hierarchy)
 // ------------------------------------------------------------
-void getGlobalNodeMatrix(const tinygltf::Model& model,
+void getGlobalNodeMatrixStatic(const tinygltf::Model& model,
     const std::vector<int>& nodeParents,
     int nodeIndex,
     float out[16])
@@ -148,7 +379,7 @@ void getGlobalNodeMatrix(const tinygltf::Model& model,
     if (parentIdx >= 0)
     {
         float parentMtx[16];
-        getGlobalNodeMatrix(model, nodeParents, parentIdx, parentMtx);
+        getGlobalNodeMatrixStatic(model, nodeParents, parentIdx, parentMtx);
         bx::mtxMul(out, local, parentMtx);
     }
     else
@@ -332,6 +563,93 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
     }
 
     // ------------------------------------------------------------
+    // PARSE ANIMATIONS
+    // ------------------------------------------------------------
+    std::vector<Animation> animations = parseAnimations(gltfModel);
+
+    std::vector<AnimationState> animStates;
+    std::vector<NodeTRS> animTRS(gltfModel.nodes.size());
+
+    Uint64 perfFreq = SDL_GetPerformanceFrequency();
+    Uint64 lastPerfTick = SDL_GetPerformanceCounter();
+
+    auto triggerAnimation = [&](int animIdx)
+        {
+            if (animIdx < 0 || animIdx >= (int)animations.size()) return;
+
+            // If this animation is already in the list, restart it
+            for (auto& s : animStates)
+            {
+                if (s.animIndex == animIdx)
+                {
+                    s.time = 0.0f;
+                    s.playing = true;
+                    return;
+                }
+            }
+
+            // Otherwise add a new state
+            animStates.push_back({ animIdx, 0.0f, true });
+        };
+
+    // Reset only the nodes affected by a given animation
+    auto resetAnim = [&](int animIdx)
+        {
+            if (animIdx < 0 || animIdx >= (int)animations.size()) return;
+
+            for (const auto& ch : animations[animIdx].channels)
+                if (ch.nodeIndex >= 0 && ch.nodeIndex < (int)animTRS.size())
+                    animTRS[ch.nodeIndex] = NodeTRS{};
+
+            // Remove from active states
+            animStates.erase(
+                std::remove_if(animStates.begin(), animStates.end(),
+                    [animIdx](const AnimationState& s) { return s.animIndex == animIdx; }),
+                animStates.end()
+            );
+        };
+
+    // Look up an animation by name and trigger it, skipping the first N keyframes if already playing
+    auto triggerAnimByName = [&](const std::string& animName)
+        {
+            int foundIdx = -1;
+            for (int i = 0; i < (int)animations.size(); ++i)
+                if (animations[i].name == animName) { foundIdx = i; break; }
+
+            if (foundIdx == -1) return;
+
+            // Check if any anim is already playing before we clear others
+            bool alreadyPlaying = std::any_of(animStates.begin(), animStates.end(),
+                [](const AnimationState& s) { return s.playing; });
+
+            // Only clear other directional anims when switching directions
+            static const std::vector<std::string> dirNames = {
+                "Up", "Down", "Left", "Right", "UpLeft", "UpRight", "DownLeft", "DownRight"
+            };
+            bool isDirectional = std::find(dirNames.begin(), dirNames.end(), animName) != dirNames.end();
+            if (isDirectional)
+            {
+                for (const auto& name : dirNames)
+                {
+                    if (name == animName) continue;
+                    for (int i = 0; i < (int)animations.size(); ++i)
+                        if (animations[i].name == name) { resetAnim(i); break; }
+                }
+            }
+
+            const auto& firstChannel = animations[foundIdx].channels;
+            int skipTo = std::min(16, (int)firstChannel[0].sampler.times.size() - 1);
+            float skipTime = (alreadyPlaying && !firstChannel.empty() && (int)firstChannel[0].sampler.times.size() > skipTo)
+                ? firstChannel[0].sampler.times[skipTo]
+                : 0.0f;
+            triggerAnimation(foundIdx);
+
+            // Apply skip time to the state we just triggered
+            for (auto& s : animStates)
+                if (s.animIndex == foundIdx) { s.time = skipTime; break; }
+        };
+
+    // ------------------------------------------------------------
     // Upload all glTF images to bgfx (cache by image index)
     // ------------------------------------------------------------
     std::unordered_map<int, bgfx::TextureHandle> textureCache;
@@ -383,6 +701,17 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
         for (size_t i = 0; i < gltfModel.nodes.size(); ++i)
             if (nodeParents[i] == -1)
                 sceneRoots.insert(int(i));
+    }
+
+    // ------------------------------------------------------------
+    // Map mesh name -> node index (for click-to-animate)
+    // ------------------------------------------------------------
+    std::unordered_map<std::string, int> meshNameToNodeIndex;
+    for (size_t nodeIdx = 0; nodeIdx < gltfModel.nodes.size(); ++nodeIdx)
+    {
+        const auto& node = gltfModel.nodes[nodeIdx];
+        if (node.mesh >= 0)
+            meshNameToNodeIndex[gltfModel.meshes[node.mesh].name] = (int)nodeIdx;
     }
 
     // ------------------------------------------------------------
@@ -577,7 +906,7 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
 
             // Get the node's global transform to put verts into world space
             float nodeMtx[16];
-            getGlobalNodeMatrix(gltfModel, nodeParents, nodeIdx, nodeMtx);
+            getGlobalNodeMatrixStatic(gltfModel, nodeParents, nodeIdx, nodeMtx);
 
             cpuMesh.positions.resize(vertexCount * 3);
             for (uint32_t i = 0; i < vertexCount; ++i)
@@ -639,8 +968,38 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
     int currentWidth = WINDOW_WIDTH;
     int currentHeight = WINDOW_HEIGHT;
 
+    bool upHeld = false;
+    bool downHeld = false;
+    bool leftHeld = false;
+    bool rightHeld = false;
+
     while (running)
     {
+        // --- Delta time ---
+        Uint64 now = SDL_GetPerformanceCounter();
+        float dt = (float)(now - lastPerfTick) / (float)perfFreq;
+        lastPerfTick = now;
+        if (dt > 0.1f) dt = 0.1f;
+
+        // --- Advance all active animations ---
+        for (auto& s : animStates)
+        {
+            if (!s.playing) continue;
+            const Animation& curAnim = animations[s.animIndex];
+            s.time += dt;
+            if (s.time >= curAnim.duration)
+            {
+                s.time = curAnim.duration;
+                s.playing = false;
+            }
+        }
+
+        // --- Rebuild per-node TRS from all active animations ---
+        std::fill(animTRS.begin(), animTRS.end(), NodeTRS{});
+        for (const auto& s : animStates)
+            if (s.animIndex >= 0)
+                applyAnimation(animations[s.animIndex], s.time, animTRS);
+
         SDL_GetWindowSize(window, &currentWidth, &currentHeight);
 
         // Compute matrices BEFORE event polling so pick ray is always current
@@ -654,16 +1013,82 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
         bx::mtxProj(proj, CAMERA_FOV_DEG, (float)currentWidth / (float)currentHeight, CAMERA_NEAR, CAMERA_FAR, bgfx::getCaps()->homogeneousDepth);
 
         SDL_Event e;
+
         while (SDL_PollEvent(&e))
         {
             if (e.type == SDL_QUIT)
             {
                 running = false;
             }
-            else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_r)
+            else if (e.type == SDL_KEYDOWN && !e.key.repeat)
             {
-                g_showRay = !g_showRay;
-                std::cout << "Ray visualisation: " << (g_showRay ? "ON" : "OFF") << "\n";
+                bool wasMovementKey = false;
+                switch (e.key.keysym.sym)
+                {
+                case SDLK_r: g_showRay = !g_showRay; std::cout << "Ray visualisation: " << (g_showRay ? "ON" : "OFF") << "\n"; break;
+                case SDLK_w: upHeld = true; wasMovementKey = true; break;
+                case SDLK_s: downHeld = true; wasMovementKey = true; break;
+                case SDLK_a: leftHeld = true; wasMovementKey = true; break;
+                case SDLK_d: rightHeld = true; wasMovementKey = true; break;
+                case SDLK_SPACE: triggerAnimByName("APress"); break;
+                case SDLK_e:     triggerAnimByName("BPress"); break;
+                }
+
+                if (wasMovementKey && (upHeld || downHeld || leftHeld || rightHeld))
+                {
+                    std::string animName;
+                    if (upHeld && leftHeld)    animName = "UpLeft";
+                    else if (upHeld && rightHeld)   animName = "UpRight";
+                    else if (downHeld && leftHeld)  animName = "DownLeft";
+                    else if (downHeld && rightHeld) animName = "DownRight";
+                    else if (upHeld)                animName = "Up";
+                    else if (downHeld)              animName = "Down";
+                    else if (rightHeld)             animName = "Right";
+                    else if (leftHeld)              animName = "Left";
+                    triggerAnimByName(animName);
+                }
+            }
+            else if (e.type == SDL_KEYUP && !e.key.repeat)
+            {
+                bool wasDirectionalKey = false;
+                switch (e.key.keysym.sym)
+                {
+                case SDLK_w: upHeld = false; wasDirectionalKey = true; break;
+                case SDLK_s: downHeld = false; wasDirectionalKey = true; break;
+                case SDLK_a: leftHeld = false; wasDirectionalKey = true; break;
+                case SDLK_d: rightHeld = false; wasDirectionalKey = true; break;
+                case SDLK_SPACE: for (int i = 0; i < (int)animations.size(); ++i) if (animations[i].name == "APress") { resetAnim(i); break; } break;
+                case SDLK_e:     for (int i = 0; i < (int)animations.size(); ++i) if (animations[i].name == "BPress") { resetAnim(i); break; } break;
+                }
+
+                if (wasDirectionalKey)
+                {
+                    const Uint8* keyState = SDL_GetKeyboardState(NULL);
+                    if (keyState[SDL_SCANCODE_W]) upHeld = true;
+                    if (keyState[SDL_SCANCODE_S]) downHeld = true;
+                    if (keyState[SDL_SCANCODE_A]) leftHeld = true;
+                    if (keyState[SDL_SCANCODE_D]) rightHeld = true;
+
+                    if (!upHeld && !downHeld && !leftHeld && !rightHeld)
+                    {
+                        for (const std::string& name : { "Up", "Down", "Left", "Right", "UpLeft", "UpRight", "DownLeft", "DownRight" })
+                            for (int i = 0; i < (int)animations.size(); ++i)
+                                if (animations[i].name == name) { resetAnim(i); break; }
+                    }
+                    else
+                    {
+                        std::string animName;
+                        if (upHeld && leftHeld)    animName = "UpLeft";
+                        else if (upHeld && rightHeld)   animName = "UpRight";
+                        else if (downHeld && leftHeld)  animName = "DownLeft";
+                        else if (downHeld && rightHeld) animName = "DownRight";
+                        else if (upHeld)                animName = "Up";
+                        else if (downHeld)              animName = "Down";
+                        else if (rightHeld)             animName = "Right";
+                        else if (leftHeld)              animName = "Left";
+                        triggerAnimByName(animName);
+                    }
+                }
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT)
             {
@@ -742,6 +1167,16 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
                 }
 
                 bool firstHitDraggable = DRAGGABLE_MESH_NAMES.count(bestMesh) > 0;
+
+                // --- Trigger animation on click of a non-draggable mesh ---
+                if (!firstHitDraggable && bestT < std::numeric_limits<float>::max())
+                {
+                    auto nodeIt = meshNameToNodeIndex.find(bestMesh);
+                    if (nodeIt != meshNameToNodeIndex.end())
+                    {
+                        //TODO
+                    }
+                }
 
                 // --- DEBUG ---
                 if (g_showRay)
@@ -864,7 +1299,7 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
         {
             // Compute global node transform including hierarchy
             float nodeMtx[16];
-            getGlobalNodeMatrix(gltfModel, nodeParents, meshInst.nodeIndex, nodeMtx);
+            getGlobalNodeMatrixAnimated(gltfModel, nodeParents, meshInst.nodeIndex, animTRS, nodeMtx);
 
             float finalMtx[16];
             bx::mtxMul(finalMtx, nodeMtx, mirrorX);

@@ -21,7 +21,7 @@ void Input::update_buttons() {
 		start = !keyboard_state[SDL_SCANCODE_GRAVE];
 		select = !keyboard_state[SDL_SCANCODE_TAB];
 		a = !keyboard_state[SDL_SCANCODE_SPACE];
-		b = !keyboard_state[SDL_SCANCODE_R];
+		b = !keyboard_state[SDL_SCANCODE_E];
 
 		joypad_input |= start << 3 | select << 2 | b << 1 | a;
 	}
