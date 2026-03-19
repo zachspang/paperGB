@@ -2,14 +2,15 @@
 #include <chrono>
 #include <thread>
 
-GB::GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer) :
+GB::GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn) :
 	cart(in_cart),
 	cpu(this),
 	ppu(this, emuScreenTexBuffer),
 	apu(),
 	mmu(this),
 	timer(this),
-	input()
+	input(),
+	isPowerOn(isPowerOn)
 {
 	OAM_DMA = 0xFF;
 	t_cycle_count = 0;

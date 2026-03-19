@@ -83,5 +83,8 @@
     <ClInclude Include="3d\3d.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\SharedBool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

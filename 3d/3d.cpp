@@ -26,7 +26,7 @@ static constexpr float CAMERA_FOV_DEG = 60.0f;
 static constexpr float CAMERA_NEAR = 0.1f;
 static constexpr float CAMERA_FAR = 10.0f;
 
-static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb6.glb";
+static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb7.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
 static const char* VS_LINE_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_line.bin";
@@ -485,7 +485,7 @@ void transformPoint(const float m[16], const float in[3], float out[3])
 }
 
 // ------------------------------------------------------------
-int run3d(TextureBuffer* emuScreenTexBuffer)
+int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
 {
     // ------------------------------------------------------------
     // SDL INIT
@@ -638,8 +638,8 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
             }
 
             const auto& firstChannel = animations[foundIdx].channels;
-            int skipTo = std::min(16, (int)firstChannel[0].sampler.times.size() - 1);
-            float skipTime = (alreadyPlaying && !firstChannel.empty() && (int)firstChannel[0].sampler.times.size() > skipTo)
+            int skipTo = std::min(5, (int)firstChannel[0].sampler.times.size() - 1);
+            float skipTime = (isDirectional && alreadyPlaying && !firstChannel.empty() && (int)firstChannel[0].sampler.times.size() > skipTo)
                 ? firstChannel[0].sampler.times[skipTo]
                 : 0.0f;
             triggerAnimation(foundIdx);
@@ -900,23 +900,18 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
 
             // ----------------------------------------------------------
             // Build CPU-side mesh for ray testing.
-            // Bake nodeMtx into positions so pick space matches render space.
+            // Store local-space positions; world positions are updated each frame.
             // ----------------------------------------------------------
             CpuMesh cpuMesh;
 
-            // Get the node's global transform to put verts into world space
-            float nodeMtx[16];
-            getGlobalNodeMatrixStatic(gltfModel, nodeParents, nodeIdx, nodeMtx);
-
+            cpuMesh.localPositions.resize(vertexCount * 3);
             cpuMesh.positions.resize(vertexCount * 3);
             for (uint32_t i = 0; i < vertexCount; ++i)
             {
                 const float* lp = reinterpret_cast<const float*>(posBase + posStride * i);
-                float worldPos[3];
-                transformPoint(nodeMtx, lp, worldPos);
-                cpuMesh.positions[i * 3 + 0] = worldPos[0];
-                cpuMesh.positions[i * 3 + 1] = worldPos[1];
-                cpuMesh.positions[i * 3 + 2] = worldPos[2];
+                cpuMesh.localPositions[i * 3 + 0] = lp[0];
+                cpuMesh.localPositions[i * 3 + 1] = lp[1];
+                cpuMesh.localPositions[i * 3 + 2] = lp[2];
             }
 
             if (use32)
@@ -999,6 +994,24 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
         for (const auto& s : animStates)
             if (s.animIndex >= 0)
                 applyAnimation(animations[s.animIndex], s.time, animTRS);
+
+        // --- Update CPU mesh world positions for accurate pick testing ---
+        for (auto& mi : allMeshes)
+        {
+            float nodeMtx[16];
+            getGlobalNodeMatrixAnimated(gltfModel, nodeParents, mi.nodeIndex, animTRS, nodeMtx);
+
+            float finalMtx[16];
+            bx::mtxMul(finalMtx, nodeMtx, mirrorX);
+
+            uint32_t vertexCount = (uint32_t)(mi.cpuMesh.localPositions.size() / 3);
+            for (uint32_t i = 0; i < vertexCount; ++i)
+            {
+                transformPoint(finalMtx,
+                    &mi.cpuMesh.localPositions[i * 3],
+                    &mi.cpuMesh.positions[i * 3]);
+            }
+        }
 
         SDL_GetWindowSize(window, &currentWidth, &currentHeight);
 
@@ -1133,11 +1146,8 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
                 g_rayEnd[2] = rayOrigin[2] + rayDir[2] * 100.0f;
                 g_hasRay = true;
 
-                // The render path applies mirrorX (X-flip) on top of nodeMtx.
-                // CPU positions are baked with nodeMtx only, so mirror the ray to match.
-                float rayOriginM[3] = { -rayOrigin[0], rayOrigin[1], rayOrigin[2] };
-                float rayDirM[3] = { -rayDir[0],    rayDir[1],    rayDir[2] };
-
+                // CPU mesh positions are now updated each frame with mirrorX already applied,
+                // so use the unmirrored ray directly for picking.
                 float bestT = std::numeric_limits<float>::max();
                 std::string bestMesh = "(none)";
 
@@ -1152,7 +1162,7 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
                         uint32_t i2 = cpu.indices[tri * 3 + 2];
 
                         float t;
-                        if (rayTriangleIntersect(rayOriginM, rayDirM,
+                        if (rayTriangleIntersect(rayOrigin, rayDir,
                             &cpu.positions[i0 * 3],
                             &cpu.positions[i1 * 3],
                             &cpu.positions[i2 * 3], t))
@@ -1174,7 +1184,30 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
                     auto nodeIt = meshNameToNodeIndex.find(bestMesh);
                     if (nodeIt != meshNameToNodeIndex.end())
                     {
-                        //TODO
+                        if (bestMesh == "switch_low_External_0")
+                        {
+                            std::lock_guard<std::mutex> lock(isPowerOn->mutex);
+                            if (!isPowerOn->value)
+                            {
+                                animStates.erase(
+                                    std::remove_if(animStates.begin(), animStates.end(),
+                                        [&](const AnimationState& s) { return s.animIndex >= 0 && animations[s.animIndex].name == "PowerOff"; }),
+                                    animStates.end()
+                                );
+                                triggerAnimByName("PowerOn");
+                                isPowerOn->value = true;
+                            }
+                            else
+                            {
+                                animStates.erase(
+                                    std::remove_if(animStates.begin(), animStates.end(),
+                                        [&](const AnimationState& s) { return s.animIndex >= 0 && animations[s.animIndex].name == "PowerOn"; }),
+                                    animStates.end()
+                                );
+                                triggerAnimByName("PowerOff");
+                                isPowerOn->value = false;
+                            }
+                        }
                     }
                 }
 
@@ -1216,7 +1249,7 @@ int run3d(TextureBuffer* emuScreenTexBuffer)
                             uint32_t i1 = cpu.indices[tri * 3 + 1];
                             uint32_t i2 = cpu.indices[tri * 3 + 2];
                             float t;
-                            if (rayTriangleIntersect(rayOriginM, rayDirM,
+                            if (rayTriangleIntersect(rayOrigin, rayDir,
                                 &cpu.positions[i0 * 3],
                                 &cpu.positions[i1 * 3],
                                 &cpu.positions[i2 * 3], t) && t < closestForMesh)

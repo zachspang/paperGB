@@ -21,6 +21,7 @@
 
 #include "3d.h"
 #include "../src/TextureBuffer.h"
+#include "../src/SharedBool.h"
 
 struct Vertex
 {
@@ -35,9 +36,9 @@ struct LineVertex
     uint32_t abgr;
 };
 
-struct CpuMesh
-{
-    std::vector<float>    positions;
+struct CpuMesh {
+    std::vector<float> positions;       // world-space, updated each frame
+    std::vector<float> localPositions;  // local-space, set once at load
     std::vector<uint32_t> indices;
 };
 
@@ -74,4 +75,4 @@ bool rayTriangleIntersect(const float orig[3], const float dir[3],
     float& t);
 
 void transformPoint(const float m[16], const float in[3], float out[3]);
-int run3d(TextureBuffer* emuScreenTexBuffer);
+int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn);

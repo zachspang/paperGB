@@ -1,6 +1,7 @@
 #include <iostream>
 #include <SDL.h>
 #include "gb.h"
+#include "SharedBool.h"
 #include "TextureBuffer.h"
 #include <thread>
 #include "3d.h"
@@ -28,16 +29,21 @@ int main(int argc, char* argv[]) {
 	emuScreenTexBuffer.width = 160;
 	emuScreenTexBuffer.height = 144;
 
+	//Shared emulator power state
+	SharedBool isPowerOn;
+	isPowerOn.value = false;
+
+
 	// Emulator thread
 	std::thread emu([&]() {
 		//Allocate Cartridge and GB on heap since they are large
-		GB* gameboy = new GB(*cart, &emuScreenTexBuffer);
+		GB* gameboy = new GB(*cart, &emuScreenTexBuffer, &isPowerOn);
 		gameboy->run();
 	});
 
 	// 3d renderer thread
 	std::thread renderer([&]() {
-		run3d(&emuScreenTexBuffer);
+		run3d(&emuScreenTexBuffer, &isPowerOn);
 	});
 
 	emu.join();

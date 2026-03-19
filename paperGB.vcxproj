@@ -154,6 +154,7 @@
     <ClInclude Include="src\input.h" />
     <ClInclude Include="src\mmu.h" />
     <ClInclude Include="src\ppu.h" />
+    <ClInclude Include="src\SharedBool.h" />
     <ClInclude Include="src\TextureBuffer.h" />
     <ClInclude Include="src\timer.h" />
   </ItemGroup>

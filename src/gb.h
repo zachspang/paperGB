@@ -9,6 +9,7 @@
 #include "timer.h"
 #include "input.h"
 #include "TextureBuffer.h"
+#include "SharedBool.h"
 
 class CPU;
 
@@ -19,7 +20,7 @@ public:
 
 	//Initialize GB object with a game cartridge 
 	//TODO: and optionally a save state
-	GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer);
+	GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn);
 
 	//Start emulator loop
 	void run();
@@ -45,6 +46,8 @@ public:
 	void int_joypad();
 
 private: 
+	SharedBool* isPowerOn;
+
 	Cartridge cart;
 
 	CPU cpu;
