@@ -43,7 +43,7 @@ void GB::run() {
 	int frame_count = 0;
 	std::chrono::duration<double> frametime;
 
-	while (true) {
+	while (isPowerOn->value) {
 		//Run CPU until PPU finishes a frame
 		while (!ppu.frame_done) {
 			cpu.tick();
@@ -92,6 +92,9 @@ void GB::run() {
 			next_frame_time = now;
 		}
 	}
+
+	//Save sram 1 final time before stopping emulation
+	cart.save();
 }
 
 
