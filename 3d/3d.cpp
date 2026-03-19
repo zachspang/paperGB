@@ -968,6 +968,8 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
     bool leftHeld = false;
     bool rightHeld = false;
 
+    std::vector<float> nodeMatrixCache(gltfModel.nodes.size() * 16);
+
     while (running)
     {
         // --- Delta time ---
@@ -996,14 +998,19 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
                 applyAnimation(animations[s.animIndex], s.time, animTRS);
 
         // --- Update CPU mesh world positions for accurate pick testing ---
-        for (auto& mi : allMeshes)
+        // Compute each node's final matrix once, then reuse across all primitives
+        for (size_t i = 0; i < gltfModel.nodes.size(); ++i)
         {
             float nodeMtx[16];
-            getGlobalNodeMatrixAnimated(gltfModel, nodeParents, mi.nodeIndex, animTRS, nodeMtx);
-
+            getGlobalNodeMatrixAnimated(gltfModel, nodeParents, (int)i, animTRS, nodeMtx);
             float finalMtx[16];
             bx::mtxMul(finalMtx, nodeMtx, mirrorX);
+            memcpy(&nodeMatrixCache[i * 16], finalMtx, sizeof(finalMtx));
+        }
 
+        for (auto& mi : allMeshes)
+        {
+            const float* finalMtx = &nodeMatrixCache[mi.nodeIndex * 16];
             uint32_t vertexCount = (uint32_t)(mi.cpuMesh.localPositions.size() / 3);
             for (uint32_t i = 0; i < vertexCount; ++i)
             {
