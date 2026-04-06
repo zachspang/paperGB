@@ -13,6 +13,17 @@ PPU::PPU(GB* in_gb, TextureBuffer* in_tex_buffer) :
 	}
 	//Set size to screen w * h * 4 bytes for RGBA
 	pixels.resize(160 * 144 * 4);
+
+	//Init pixels with green color
+	for (size_t i = 0; i < pixels.size(); i += 4)
+	{
+		pixels[i + 0] = 155;
+		pixels[i + 1] = 188;
+		pixels[i + 2] = 15;
+		pixels[i + 3] = 255;
+	}
+
+
 	current_mode = VBlank;
 	dot_count = 0;
 	frame_done = false;
