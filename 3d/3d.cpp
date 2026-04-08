@@ -970,17 +970,20 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
     bool rightHeld = false;
 
     // --- Cartridge state machine ---
-    enum class CartState { Idle, Ejecting, DialogOpen, Spinning };
+    enum class CartState { Idle, Ejecting, DialogOpen, Inserting };
     CartState cartState = CartState::Idle;
-    int  cartEjectFrames = 0;
     bool cartDialogSelected = false;
     std::string cartSelectedPath;
     std::atomic<bool> cartDialogDone{ false };
 
-    // Find CartSpin index once
+    // Find CartSpin and Eject indices once
     int cartSpinIdx = -1;
+    int cartEjectIdx = -1;
     for (int i = 0; i < (int)animations.size(); ++i)
-        if (animations[i].name == "CartSpin") { cartSpinIdx = i; break; }
+    {
+        if (animations[i].name == "CartSpin") cartSpinIdx = i;
+        if (animations[i].name == "Eject")    cartEjectIdx = i;
+    }
 
     std::vector<float> nodeMatrixCache(gltfModel.nodes.size() * 16);
 
@@ -998,8 +1001,6 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
         for (int i = 0; i < (int)gltfModel.nodes.size(); ++i)
             visit(i);
     }
-
-    bool mouseClicked = false;
 
     // Pre-fill the node matrix cache so frame 0 is valid
     for (int i : nodeOrder)
@@ -1084,14 +1085,21 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
         // --- Cart state machine ---
         if (cartState == CartState::Ejecting)
         {
-            cartEjectFrames++;
-            if (cartEjectFrames >= 60)
+            // Wait until the Eject animation has finished playing
+            bool ejectDone = true;
+            if (cartEjectIdx >= 0)
+            {
+                for (const auto& s : animStates)
+                    if (s.animIndex == cartEjectIdx && s.playing) { ejectDone = false; break; }
+            }
+
+            if (ejectDone)
             {
                 cartState = CartState::DialogOpen;
 
                 // Start CartSpin looping at normal speed
                 if (cartSpinIdx >= 0)
-                    triggerAnimation(cartSpinIdx);
+                    triggerAnimByName("CartSpin");
 
                 // Open file dialog on background thread
                 std::thread([&]() {
@@ -1099,10 +1107,10 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
                     char filePath[MAX_PATH] = {};
                     ofn.lStructSize = sizeof(ofn);
                     ofn.hwndOwner = (HWND)wmi.info.win.window;
-                    ofn.lpstrFilter = "Game Boy ROMs\0*.gb\0All Files\0*.*\0";
+                    ofn.lpstrFilter = "GameBoy ROMs\0*.gb\0All Files\0*.*\0";
                     ofn.lpstrFile = filePath;
                     ofn.nMaxFile = MAX_PATH;
-                    ofn.lpstrTitle = "Select a Game Boy ROM";
+                    ofn.lpstrTitle = "Select a GameBoy ROM";
                     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
                     bool ok = GetOpenFileNameA(&ofn);
                     cartDialogSelected = ok;
@@ -1129,25 +1137,14 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
                 }
             }
 
-            // Dialog closed — switch to fast spin
+            // Dialog closed
             if (cartDialogDone.load(std::memory_order_acquire))
             {
-                cartState = CartState::Spinning;
-                if (cartSpinIdx >= 0)
-                {
-                    // Remove any existing CartSpin state and start fresh
-                    animStates.erase(
-                        std::remove_if(animStates.begin(), animStates.end(),
-                            [&](const AnimationState& s) { return s.animIndex == cartSpinIdx; }),
-                        animStates.end()
-                    );
-                    triggerAnimation(cartSpinIdx);
-                }
+                cartState = CartState::Inserting;
             }
         }
-        else if (cartState == CartState::Spinning)
+        else if (cartState == CartState::Inserting)
         {
-            // Advance CartSpin at 2x speed manually
             if (cartSpinIdx >= 0)
             {
                 AnimationState* spin = nullptr;
@@ -1156,8 +1153,9 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
 
                 if (spin && spin->playing)
                 {
-                    // Add an extra dt worth of advancement (already advanced once by the normal loop above)
-                    spin->time += dt;
+                    // Advance animation faster
+                    float speedModifier = animations[cartSpinIdx].duration - spin->time + 2;
+                    spin->time += speedModifier * dt;
                     if (spin->time >= animations[cartSpinIdx].duration)
                     {
                         spin->time = animations[cartSpinIdx].duration;
@@ -1170,11 +1168,13 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
                 if (spinDone)
                 {
                     cartState = CartState::Idle;
-                    if (cartDialogSelected)
+                    if (cartDialogDone)
                     {
                         triggerAnimByName("Insert");
                         std::cout << "Selected ROM: " << cartSelectedPath << "\n";
                         // TODO: load cartSelectedPath
+                        //if cartDialogSelected change emu path to new, otherwise keep original path
+
                     }
                 }
             }
@@ -1223,23 +1223,6 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
                 memcpy(&nodeMatrixCache[i * 16], local, sizeof(local));
         }
 
-        // --- Update CPU mesh world positions for pick testing — only on click ---
-        if (mouseClicked)
-        {
-            for (auto& mi : allMeshes)
-            {
-                float finalMtx[16];
-                bx::mtxMul(finalMtx, &nodeMatrixCache[mi.nodeIndex * 16], mirrorX);
-                uint32_t vertexCount = (uint32_t)(mi.cpuMesh.localPositions.size() / 3);
-                for (uint32_t i = 0; i < vertexCount; ++i)
-                {
-                    transformPoint(finalMtx,
-                        &mi.cpuMesh.localPositions[i * 3],
-                        &mi.cpuMesh.positions[i * 3]);
-                }
-            }
-        }
-
         SDL_GetWindowSize(window, &currentWidth, &currentHeight);
 
         // Compute matrices BEFORE event polling so pick ray is always current
@@ -1254,7 +1237,6 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
 
         SDL_Event e;
 
-        mouseClicked = false;
         while (SDL_PollEvent(&e))
         {
             if (e.type == SDL_QUIT)
@@ -1333,7 +1315,20 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT)
             {
-                mouseClicked = true;
+                // --- Update CPU mesh world positions for pick testing — only on click ---
+                for (auto& mi : allMeshes)
+                {
+                    float finalMtx[16];
+                    bx::mtxMul(finalMtx, &nodeMatrixCache[mi.nodeIndex * 16], mirrorX);
+                    uint32_t vertexCount = (uint32_t)(mi.cpuMesh.localPositions.size() / 3);
+                    for (uint32_t i = 0; i < vertexCount; ++i)
+                    {
+                        transformPoint(finalMtx,
+                            &mi.cpuMesh.localPositions[i * 3],
+                            &mi.cpuMesh.positions[i * 3]);
+                    }
+                }
+
                 // Build pick ray: origin at camera, direction toward unprojected far point
                 float rayOrigin[3] = { camX, camY, camZ };
 
@@ -1441,8 +1436,14 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
                         {
                             if (cartState == CartState::Idle)
                             {
+                                animStates.erase(
+                                    std::remove_if(animStates.begin(), animStates.end(),
+                                        [&](const AnimationState& s) { return s.animIndex >= 0 && animations[s.animIndex].name == "Insert"
+                                        || animations[s.animIndex].name == "Eject"
+                                        || animations[s.animIndex].name == "CartSpin"; }),
+                                    animStates.end()
+                                );
                                 triggerAnimByName("Eject");
-                                cartEjectFrames = 0;
                                 cartDialogDone.store(false, std::memory_order_relaxed);
                                 cartState = CartState::Ejecting;
                             }
