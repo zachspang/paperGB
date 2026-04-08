@@ -16,6 +16,12 @@ GB::GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer, SharedBool* isPower
 	t_cycle_count = 0;
 }
 
+// Backwards-compatible constructor for tests that don't pass a SharedBool.
+GB::GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer) :
+    GB(in_cart, emuScreenTexBuffer, nullptr)
+{
+}
+
 void GB::tick_other_components() {
 	//This is called after an M-Cycle so we need to tick ppu 4 T-cycles
 	for (int i = 0; i < 4; i++) {

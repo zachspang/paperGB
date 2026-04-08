@@ -21,6 +21,8 @@ public:
 	//Initialize GB object with a game cartridge 
 	//TODO: and optionally a save state
 	GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn);
+    // Backwards-compatible constructor used by tests (no SharedBool)
+    GB(Cartridge in_cart, TextureBuffer* emuScreenTexBuffer);
 
 	//Start emulator loop
 	void run();
