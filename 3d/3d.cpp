@@ -12,6 +12,7 @@ shadercRelease.exe -f fs_line.sc -o fs_line.bin --type fragment --platform windo
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define TINYGLTF_IMPLEMENTATION
 #include <tinygltf-2.9.7/tiny_gltf.h>
+#include <commdlg.h>
 
 // ------------------------------------------------------------
 // Constants
@@ -26,7 +27,7 @@ static constexpr float CAMERA_FOV_DEG = 60.0f;
 static constexpr float CAMERA_NEAR = 0.1f;
 static constexpr float CAMERA_FAR = 10.0f;
 
-static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb7.glb";
+static const char* GLB_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/gb8.glb";
 static const char* VS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_mesh.bin";
 static const char* FS_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/fs_mesh.bin";
 static const char* VS_LINE_BIN_PATH = "C:/Users/spang/Desktop/Projects/paperGB/3d/vs_line.bin";
@@ -968,7 +969,90 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
     bool leftHeld = false;
     bool rightHeld = false;
 
+    // --- Cartridge state machine ---
+    enum class CartState { Idle, Ejecting, DialogOpen, Spinning };
+    CartState cartState = CartState::Idle;
+    int  cartEjectFrames = 0;
+    bool cartDialogSelected = false;
+    std::string cartSelectedPath;
+    std::atomic<bool> cartDialogDone{ false };
+
+    // Find CartSpin index once
+    int cartSpinIdx = -1;
+    for (int i = 0; i < (int)animations.size(); ++i)
+        if (animations[i].name == "CartSpin") { cartSpinIdx = i; break; }
+
     std::vector<float> nodeMatrixCache(gltfModel.nodes.size() * 16);
+
+    // Build a parent-first ordered list so each node's parent is always computed before it
+    std::vector<int> nodeOrder;
+    {
+        std::vector<bool> visited(gltfModel.nodes.size(), false);
+        std::function<void(int)> visit = [&](int i) {
+            if (visited[i]) return;
+            int p = nodeParents[i];
+            if (p >= 0) visit(p);
+            visited[i] = true;
+            nodeOrder.push_back(i);
+            };
+        for (int i = 0; i < (int)gltfModel.nodes.size(); ++i)
+            visit(i);
+    }
+
+    bool mouseClicked = false;
+
+    // Pre-fill the node matrix cache so frame 0 is valid
+    for (int i : nodeOrder)
+    {
+        const auto& node = gltfModel.nodes[i];
+        const NodeTRS& trs = animTRS[i];
+
+        float local[16];
+        if (!node.matrix.empty())
+        {
+            for (int j = 0; j < 16; ++j) local[j] = static_cast<float>(node.matrix[j]);
+        }
+        else
+        {
+            float tx = trs.hasT ? trs.t[0] : (node.translation.size() >= 3 ? (float)node.translation[0] : 0.0f);
+            float ty = trs.hasT ? trs.t[1] : (node.translation.size() >= 3 ? (float)node.translation[1] : 0.0f);
+            float tz = trs.hasT ? trs.t[2] : (node.translation.size() >= 3 ? (float)node.translation[2] : 0.0f);
+            float qx = trs.hasR ? -trs.r[0] : (node.rotation.size() >= 4 ? (float)node.rotation[0] : 0.0f);
+            float qy = trs.hasR ? -trs.r[1] : (node.rotation.size() >= 4 ? (float)node.rotation[1] : 0.0f);
+            float qz = trs.hasR ? trs.r[2] : (node.rotation.size() >= 4 ? (float)node.rotation[2] : 0.0f);
+            float qw = trs.hasR ? trs.r[3] : (node.rotation.size() >= 4 ? (float)node.rotation[3] : 1.0f);
+            float sx = trs.hasS ? trs.s[0] : (node.scale.size() >= 3 ? (float)node.scale[0] : 1.0f);
+            float sy = trs.hasS ? trs.s[1] : (node.scale.size() >= 3 ? (float)node.scale[1] : 1.0f);
+            float sz = trs.hasS ? trs.s[2] : (node.scale.size() >= 3 ? (float)node.scale[2] : 1.0f);
+
+            float T[16], R[16], S[16], tmp[16];
+            bx::mtxTranslate(T, tx, ty, tz);
+            bx::mtxFromQuaternion(R, bx::Quaternion(qx, qy, qz, qw));
+            bx::mtxScale(S, sx, sy, sz);
+            bx::mtxMul(tmp, S, R);
+            bx::mtxMul(local, tmp, T);
+        }
+
+        int p = nodeParents[i];
+        if (p >= 0)
+            bx::mtxMul(&nodeMatrixCache[i * 16], local, &nodeMatrixCache[p * 16]);
+        else
+            memcpy(&nodeMatrixCache[i * 16], local, sizeof(local));
+    }
+
+    // Also pre-fill CPU mesh world positions for pick testing
+    for (auto& mi : allMeshes)
+    {
+        float finalMtx[16];
+        bx::mtxMul(finalMtx, &nodeMatrixCache[mi.nodeIndex * 16], mirrorX);
+        uint32_t vertexCount = (uint32_t)(mi.cpuMesh.localPositions.size() / 3);
+        for (uint32_t i = 0; i < vertexCount; ++i)
+        {
+            transformPoint(finalMtx,
+                &mi.cpuMesh.localPositions[i * 3],
+                &mi.cpuMesh.positions[i * 3]);
+        }
+    }
 
     while (running)
     {
@@ -997,26 +1081,162 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
             if (s.animIndex >= 0)
                 applyAnimation(animations[s.animIndex], s.time, animTRS);
 
-        // --- Update CPU mesh world positions for accurate pick testing ---
-        // Compute each node's final matrix once, then reuse across all primitives
-        for (size_t i = 0; i < gltfModel.nodes.size(); ++i)
+        // --- Cart state machine ---
+        if (cartState == CartState::Ejecting)
         {
-            float nodeMtx[16];
-            getGlobalNodeMatrixAnimated(gltfModel, nodeParents, (int)i, animTRS, nodeMtx);
-            float finalMtx[16];
-            bx::mtxMul(finalMtx, nodeMtx, mirrorX);
-            memcpy(&nodeMatrixCache[i * 16], finalMtx, sizeof(finalMtx));
+            cartEjectFrames++;
+            if (cartEjectFrames >= 60)
+            {
+                cartState = CartState::DialogOpen;
+
+                // Start CartSpin looping at normal speed
+                if (cartSpinIdx >= 0)
+                    triggerAnimation(cartSpinIdx);
+
+                // Open file dialog on background thread
+                std::thread([&]() {
+                    OPENFILENAMEA ofn = {};
+                    char filePath[MAX_PATH] = {};
+                    ofn.lStructSize = sizeof(ofn);
+                    ofn.hwndOwner = (HWND)wmi.info.win.window;
+                    ofn.lpstrFilter = "Game Boy ROMs\0*.gb\0All Files\0*.*\0";
+                    ofn.lpstrFile = filePath;
+                    ofn.nMaxFile = MAX_PATH;
+                    ofn.lpstrTitle = "Select a Game Boy ROM";
+                    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+                    bool ok = GetOpenFileNameA(&ofn);
+                    cartDialogSelected = ok;
+                    cartSelectedPath = ok ? std::string(filePath) : "";
+                    cartDialogDone.store(true, std::memory_order_release);
+                    }).detach();
+            }
+        }
+        else if (cartState == CartState::DialogOpen)
+        {
+            // Keep CartSpin looping — but only if dialog is still open
+            if (cartSpinIdx >= 0 && !cartDialogDone.load(std::memory_order_acquire))
+            {
+                AnimationState* spin = nullptr;
+                for (auto& s : animStates)
+                    if (s.animIndex == cartSpinIdx) { spin = &s; break; }
+
+                if (!spin)
+                    triggerAnimation(cartSpinIdx);
+                else if (!spin->playing)
+                {
+                    spin->time = 0.0f;
+                    spin->playing = true;
+                }
+            }
+
+            // Dialog closed — switch to fast spin
+            if (cartDialogDone.load(std::memory_order_acquire))
+            {
+                cartState = CartState::Spinning;
+                if (cartSpinIdx >= 0)
+                {
+                    // Remove any existing CartSpin state and start fresh
+                    animStates.erase(
+                        std::remove_if(animStates.begin(), animStates.end(),
+                            [&](const AnimationState& s) { return s.animIndex == cartSpinIdx; }),
+                        animStates.end()
+                    );
+                    triggerAnimation(cartSpinIdx);
+                }
+            }
+        }
+        else if (cartState == CartState::Spinning)
+        {
+            // Advance CartSpin at 2x speed manually
+            if (cartSpinIdx >= 0)
+            {
+                AnimationState* spin = nullptr;
+                for (auto& s : animStates)
+                    if (s.animIndex == cartSpinIdx) { spin = &s; break; }
+
+                if (spin && spin->playing)
+                {
+                    // Add an extra dt worth of advancement (already advanced once by the normal loop above)
+                    spin->time += dt;
+                    if (spin->time >= animations[cartSpinIdx].duration)
+                    {
+                        spin->time = animations[cartSpinIdx].duration;
+                        spin->playing = false;
+                    }
+                }
+
+                // Spin finished — play Insert if a file was selected
+                bool spinDone = !spin || !spin->playing;
+                if (spinDone)
+                {
+                    cartState = CartState::Idle;
+                    if (cartDialogSelected)
+                    {
+                        triggerAnimByName("Insert");
+                        std::cout << "Selected ROM: " << cartSelectedPath << "\n";
+                        // TODO: load cartSelectedPath
+                    }
+                }
+            }
+            else
+            {
+                cartState = CartState::Idle;
+            }
         }
 
-        for (auto& mi : allMeshes)
+        // --- Rebuild node matrix cache using parent-first order (no recursion) ---
+        for (int i : nodeOrder)
         {
-            const float* finalMtx = &nodeMatrixCache[mi.nodeIndex * 16];
-            uint32_t vertexCount = (uint32_t)(mi.cpuMesh.localPositions.size() / 3);
-            for (uint32_t i = 0; i < vertexCount; ++i)
+            const auto& node = gltfModel.nodes[i];
+            const NodeTRS& trs = animTRS[i];
+
+            float local[16];
+            if (!node.matrix.empty())
             {
-                transformPoint(finalMtx,
-                    &mi.cpuMesh.localPositions[i * 3],
-                    &mi.cpuMesh.positions[i * 3]);
+                for (int j = 0; j < 16; ++j) local[j] = static_cast<float>(node.matrix[j]);
+            }
+            else
+            {
+                float tx = trs.hasT ? trs.t[0] : (node.translation.size() >= 3 ? (float)node.translation[0] : 0.0f);
+                float ty = trs.hasT ? trs.t[1] : (node.translation.size() >= 3 ? (float)node.translation[1] : 0.0f);
+                float tz = trs.hasT ? trs.t[2] : (node.translation.size() >= 3 ? (float)node.translation[2] : 0.0f);
+                float qx = trs.hasR ? -trs.r[0] : (node.rotation.size() >= 4 ? (float)node.rotation[0] : 0.0f);
+                float qy = trs.hasR ? -trs.r[1] : (node.rotation.size() >= 4 ? (float)node.rotation[1] : 0.0f);
+                float qz = trs.hasR ? trs.r[2] : (node.rotation.size() >= 4 ? (float)node.rotation[2] : 0.0f);
+                float qw = trs.hasR ? trs.r[3] : (node.rotation.size() >= 4 ? (float)node.rotation[3] : 1.0f);
+                float sx = trs.hasS ? trs.s[0] : (node.scale.size() >= 3 ? (float)node.scale[0] : 1.0f);
+                float sy = trs.hasS ? trs.s[1] : (node.scale.size() >= 3 ? (float)node.scale[1] : 1.0f);
+                float sz = trs.hasS ? trs.s[2] : (node.scale.size() >= 3 ? (float)node.scale[2] : 1.0f);
+
+                float T[16], R[16], S[16], tmp[16];
+                bx::mtxTranslate(T, tx, ty, tz);
+                bx::mtxFromQuaternion(R, bx::Quaternion(qx, qy, qz, qw));
+                bx::mtxScale(S, sx, sy, sz);
+                bx::mtxMul(tmp, S, R);
+                bx::mtxMul(local, tmp, T);
+            }
+
+            int p = nodeParents[i];
+            if (p >= 0)
+                bx::mtxMul(&nodeMatrixCache[i * 16], local, &nodeMatrixCache[p * 16]);
+            else
+                memcpy(&nodeMatrixCache[i * 16], local, sizeof(local));
+        }
+
+        // --- Update CPU mesh world positions for pick testing — only on click ---
+        if (mouseClicked)
+        {
+            for (auto& mi : allMeshes)
+            {
+                float finalMtx[16];
+                bx::mtxMul(finalMtx, &nodeMatrixCache[mi.nodeIndex * 16], mirrorX);
+                uint32_t vertexCount = (uint32_t)(mi.cpuMesh.localPositions.size() / 3);
+                for (uint32_t i = 0; i < vertexCount; ++i)
+                {
+                    transformPoint(finalMtx,
+                        &mi.cpuMesh.localPositions[i * 3],
+                        &mi.cpuMesh.positions[i * 3]);
+                }
             }
         }
 
@@ -1034,6 +1254,7 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
 
         SDL_Event e;
 
+        mouseClicked = false;
         while (SDL_PollEvent(&e))
         {
             if (e.type == SDL_QUIT)
@@ -1112,6 +1333,7 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT)
             {
+                mouseClicked = true;
                 // Build pick ray: origin at camera, direction toward unprojected far point
                 float rayOrigin[3] = { camX, camY, camZ };
 
@@ -1213,6 +1435,16 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
                                 );
                                 triggerAnimByName("PowerOff");
                                 isPowerOn->value = false;
+                            }
+                        }
+                        else if (bestMesh == "chip_low_Cartridge_0")
+                        {
+                            if (cartState == CartState::Idle)
+                            {
+                                triggerAnimByName("Eject");
+                                cartEjectFrames = 0;
+                                cartDialogDone.store(false, std::memory_order_relaxed);
+                                cartState = CartState::Ejecting;
                             }
                         }
                     }
@@ -1337,12 +1569,9 @@ int run3d(TextureBuffer* emuScreenTexBuffer, SharedBool* isPowerOn)
         // Render all meshes
         for (const auto& meshInst : allMeshes)
         {
-            // Compute global node transform including hierarchy
-            float nodeMtx[16];
-            getGlobalNodeMatrixAnimated(gltfModel, nodeParents, meshInst.nodeIndex, animTRS, nodeMtx);
-
+            // Apply mirrorX on top of cached world matrix
             float finalMtx[16];
-            bx::mtxMul(finalMtx, nodeMtx, mirrorX);
+            bx::mtxMul(finalMtx, &nodeMatrixCache[meshInst.nodeIndex * 16], mirrorX);
 
             bgfx::setTransform(finalMtx);
             bgfx::setVertexBuffer(0, meshInst.buffers.vbh);
